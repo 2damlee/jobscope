@@ -8,7 +8,7 @@ from app.db import SessionLocal
 from app.models import Job
 
 
-CSV_PATH = "../data/raw/jobs.csv"
+CSV_PATH = "data/raw/jobs.csv"
 
 
 def load_csv(path: str) -> pd.DataFrame:
