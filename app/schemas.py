@@ -17,3 +17,12 @@ class JobResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class SkillCountResponse(BaseModel):
+    skill: str
+    count: int
+    
+class RecommendedJobResponse(BaseModel):
+    job_id: int
+    title: str
+    score: float
