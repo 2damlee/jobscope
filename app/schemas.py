@@ -56,5 +56,6 @@ class RagSource(BaseModel):
 
 class RagAskResponse(BaseModel):
     answer: str
+    generation_mode: str
     sources: list[RagSource]
     matched_chunks: list[str]

@@ -1,6 +1,9 @@
 from collections import Counter
 import re
 
+from app.config import RAG_USE_LLM
+from rag.llm_client import generate_with_llm, is_llm_configured
+
 
 def split_sentences(text: str) -> list[str]:
     if not text:
@@ -71,7 +74,7 @@ def detect_question_type(question: str) -> str:
     return "general"
 
 
-def generate_answer(question: str, results: list[dict]) -> str:
+def generate_extractive_answer(question: str, results: list[dict]) -> str:
     if not results:
         return "No relevant job posting information was found for the given question and filters."
 
@@ -84,3 +87,22 @@ def generate_answer(question: str, results: list[dict]) -> str:
         return "Relevant job postings:\n" + summarize_jobs(results)
 
     return "Based on the retrieved job postings:\n" + summarize_jobs(results)
+
+
+def generate_answer(question: str, results: list[dict]) -> tuple[str, str]:
+    if not results:
+        return (
+            "No relevant job posting information was found for the given question and filters.",
+            "extractive",
+        )
+
+    if RAG_USE_LLM and is_llm_configured():
+        try:
+            context_chunks = [r["chunk_text"] for r in results]
+            answer = generate_with_llm(question, context_chunks)
+            if answer:
+                return answer, "llm"
+        except Exception:
+            pass
+
+    return generate_extractive_answer(question, results), "extractive"

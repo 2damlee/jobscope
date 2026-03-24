@@ -58,7 +58,7 @@ def answer_question(
     final_results = deduped[:top_k]
 
     matched_chunks = [r["chunk_text"] for r in final_results]
-    answer = generate_answer(question, final_results)
+    answer, generation_mode = generate_answer(question, final_results)
 
     sources = []
     for r in final_results:
@@ -75,6 +75,7 @@ def answer_question(
 
     return {
         "answer": answer,
+        "generation_mode": generation_mode,
         "sources": sources,
         "matched_chunks": matched_chunks,
     }
