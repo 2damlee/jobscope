@@ -37,6 +37,7 @@ def build_chunk_index():
                     "seniority": job.seniority,
                     "chunk_text": chunk,
                     "chunk_order": i,
+                    "chunk_length": len(chunk),
                 })
                 chunk_texts.append(chunk)
 
@@ -47,16 +48,19 @@ def build_chunk_index():
         with open(CHUNK_META_PATH, "w") as f:
             json.dump(chunk_records, f, ensure_ascii=False, indent=2)
 
-        print(f"Saved {len(chunk_records)} chunks.")
-        
         meta = {
             "generated_at": datetime.utcnow().isoformat(),
             "chunk_count": len(chunk_records),
-            "artifact": "job_chunks_index"
+            "artifact": "job_chunks_index",
+            "avg_chunk_length": round(
+                sum(item["chunk_length"] for item in chunk_records) / len(chunk_records), 2
+            ) if chunk_records else 0,
         }
 
         with open("data/processed/chunk_index_meta.json", "w") as f:
             json.dump(meta, f, indent=2)
+
+        print(f"Saved {len(chunk_records)} chunks.")
 
     finally:
         db.close()

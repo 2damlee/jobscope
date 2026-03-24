@@ -1,3 +1,7 @@
+from rag.retriever import search_chunks
+from rag.answer_generation import generate_answer
+
+
 def rerank_results(results, question):
     reranked = []
 
@@ -28,23 +32,6 @@ def deduplicate_by_job(results, max_chunks_per_job=2):
     return deduped
 
 
-def build_answer(question: str, results: list[dict]) -> str:
-    if not results:
-        return "No relevant job posting information was found for the given question and filters."
-
-    lines = ["Based on the retrieved job postings:"]
-
-    seen_titles = set()
-    for r in results:
-        title = r["title"]
-        if title in seen_titles:
-            continue
-        seen_titles.add(title)
-        lines.append(f"- {title}: {r['chunk_text']}")
-
-    return "\n".join(lines)
-
-
 def answer_question(
     question: str,
     category: str | None = None,
@@ -52,8 +39,6 @@ def answer_question(
     seniority: str | None = None,
     top_k: int = 5,
 ):
-    from rag.retriever import search_chunks
-
     top_k = max(1, top_k)
 
     raw_results = search_chunks(question, top_k=top_k * 4)
@@ -73,7 +58,7 @@ def answer_question(
     final_results = deduped[:top_k]
 
     matched_chunks = [r["chunk_text"] for r in final_results]
-    answer = build_answer(question, final_results)
+    answer, generation_mode = generate_answer(question, final_results)
 
     sources = []
     for r in final_results:
@@ -90,6 +75,7 @@ def answer_question(
 
     return {
         "answer": answer,
+        "generation_mode": generation_mode,
         "sources": sources,
         "matched_chunks": matched_chunks,
     }
