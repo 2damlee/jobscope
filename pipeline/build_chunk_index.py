@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 from app.db import SessionLocal
 from app.models import Job
@@ -47,6 +48,15 @@ def build_chunk_index():
             json.dump(chunk_records, f, ensure_ascii=False, indent=2)
 
         print(f"Saved {len(chunk_records)} chunks.")
+        
+        meta = {
+            "generated_at": datetime.utcnow().isoformat(),
+            "chunk_count": len(chunk_records),
+            "artifact": "job_chunks_index"
+        }
+
+        with open("data/processed/chunk_index_meta.json", "w") as f:
+            json.dump(meta, f, indent=2)
 
     finally:
         db.close()
