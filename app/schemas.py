@@ -28,6 +28,11 @@ class RecommendedJobResponse(BaseModel):
     job_id: int
     title: str
     score: float
+    embedding_score: float
+    skill_overlap_score: float
+    shared_skills: list[str]
+    same_category: bool
+    same_seniority: bool
 
 
 class RagAskRequest(BaseModel):

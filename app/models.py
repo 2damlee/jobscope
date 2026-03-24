@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text, Date
 from app.db import Base
 
+
 class Job(Base):
     __tablename__ = "jobs"
 
@@ -14,4 +15,4 @@ class Job(Base):
     cleaned_description = Column(Text, nullable=True)
     detected_skills = Column(Text, nullable=True)
     date_posted = Column(Date, nullable=True)
-    url = Column(String, nullable=True)
+    url = Column(String, unique=True, nullable=False)
