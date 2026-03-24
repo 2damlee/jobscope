@@ -1,5 +1,6 @@
 import json
 import numpy as np
+from datetime import datetime
 from sentence_transformers import SentenceTransformer
 
 from app.db import SessionLocal
@@ -37,6 +38,16 @@ def build_embeddings():
             json.dump(job_ids, f)
 
         print(f"Saved {len(job_ids)} embeddings.")
+        
+        meta = {
+            "generated_at": datetime.utcnow().isoformat(),
+            "job_count": len(job_ids),
+            "model_name": MODEL_NAME,
+            "artifact": "job_embeddings"
+        }
+
+        with open("data/processed/embedding_meta.json", "w") as f:
+            json.dump(meta, f, indent=2)
 
     finally:
         db.close()
