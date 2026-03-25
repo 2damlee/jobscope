@@ -18,6 +18,12 @@ class JobResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class JobsListResponse(BaseModel):
+    items: list[JobResponse]
+    total: int
+    page: int
+    size: int
+    has_next: bool
 
 class SkillCountResponse(BaseModel):
     skill: str
