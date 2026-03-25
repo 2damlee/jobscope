@@ -1,5 +1,6 @@
 from rag.retriever import search_chunks
 from rag.answer_generation import generate_answer
+from rag.filters import apply_result_filters
 
 
 def rerank_results(results, question):
@@ -42,16 +43,12 @@ def answer_question(
     top_k = max(1, top_k)
 
     raw_results = search_chunks(question, top_k=top_k * 4)
-
-    filtered = []
-    for r in raw_results:
-        if category and (r["category"] or "").lower() != category.lower():
-            continue
-        if location and (r["location"] or "").lower() != location.lower():
-            continue
-        if seniority and (r["seniority"] or "").lower() != seniority.lower():
-            continue
-        filtered.append(r)
+    filtered = apply_result_filters(
+        raw_results,
+        category=category,
+        location=location,
+        seniority=seniority,
+    )
 
     reranked = rerank_results(filtered, question)
     deduped = deduplicate_by_job(reranked, max_chunks_per_job=1)

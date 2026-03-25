@@ -3,6 +3,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models import Job
+from app.filters import apply_job_filters
 
 
 ALLOWED_SORT_FIELDS = {
@@ -24,23 +25,13 @@ def get_jobs(
     sort_order: str = "desc",
 ):
     query = db.query(Job)
-
-    if keyword:
-        query = query.filter(
-            or_(
-                Job.title.ilike(f"%{keyword}%"),
-                Job.description.ilike(f"%{keyword}%"),
-            )
-        )
-
-    if location:
-        query = query.filter(Job.location.ilike(f"%{location}%"))
-
-    if category:
-        query = query.filter(Job.category.ilike(f"%{category}%"))
-
-    if seniority:
-        query = query.filter(Job.seniority.ilike(f"%{seniority}%"))
+    query = apply_job_filters(
+        query,
+        keyword=keyword,
+        location=location,
+        category=category,
+        seniority=seniority,
+    )
 
     total = query.count()
 
@@ -64,20 +55,22 @@ def get_jobs(
 
 def get_top_skills(
     db: Session,
+    keyword: str | None = None,
+    location: str | None = None,
     category: str | None = None,
     seniority: str | None = None,
     limit: int = 10,
 ):
     query = db.query(Job)
-
-    if category:
-        query = query.filter(Job.category.ilike(f"%{category}%"))
-
-    if seniority:
-        query = query.filter(Job.seniority.ilike(f"%{seniority}%"))
+    query = apply_job_filters(
+        query,
+        keyword=keyword,
+        location=location,
+        category=category,
+        seniority=seniority,
+    )
 
     jobs = query.all()
-
     counter = Counter()
 
     for job in jobs:
