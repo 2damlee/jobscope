@@ -1,74 +1,70 @@
 # JobScope: AI-Powered Job Intelligence Platform
 
-JobScope is a backend/data project that processes job postings and provides skill analysis, similar job recommendations, and retrieval-based question answering.
+JobScope is a pipeline-oriented backend/data system for ingesting, processing, and serving job posting data.
 
-The project was built as a portfolio-focused MVP with an end-to-end flow:
-
-CSV ingestion → PostgreSQL storage → text cleaning → skill extraction → embeddings/retrieval → FastAPI APIs.
+It focuses on combining data engineering workflows with API-based serving, recommendation, and retrieval.
 
 ---
 
-## What it does
+## 🔗 Table of Contents
 
-- Ingests job posting data from CSV into PostgreSQL
-- Cleans job descriptions for downstream analytics and retrieval
-- Extracts core skills with a rule-based approach
-- Exposes a job listing API with simple filters
-- Provides top skill analytics
-- Recommends similar jobs using description embeddings
-- Supports RAG-style Q&A over job description chunks with source metadata
-
----
-
-## Why I built it
-
-I wanted a project that combines data engineering, backend development, and applied NLP in one system.
-
-Instead of building a frontend-heavy app, I focused on:
-
-- data flow
-- API design
-- database modeling
-- semantic similarity
-- retrieval-based question answering
-- reproducible local execution with Docker
+- [Overview](#overview)
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Pipeline](#pipeline)
+- [API](#api)
+- [Running Locally](#running-locally)
+- [Running with Docker](#running-with-docker)
 
 ---
 
-## Scope
+## Overview
 
-### Included in MVP
+Core flow:
 
-- CSV-based job ingestion
-- PostgreSQL storage
-- description cleaning
-- rule-based skill extraction
-- /jobs
-- /analytics/skills
-- /recommend/{job_id}
-- /rag/ask
-- Docker setup
+```
+CSV ingestion → PostgreSQL → cleaning / skill extraction → embeddings → indexing → FastAPI
+```
 
-### Not included
+---
 
-- frontend
-- production-grade web crawling
-- Airflow / Kafka / Kubernetes
-- resume-job matching
-- CI/CD
+## Features
+
+- CSV ingestion with validation and upsert logic  
+- PostgreSQL-backed storage  
+- Job description cleaning  
+- Rule-based skill extraction (alias normalization)  
+- Job API with filtering, sorting, pagination  
+- Skill analytics  
+- Hybrid recommendation (embeddings + structured signals)  
+- Retrieval-based Q&A (RAG pipeline)  
 
 ---
 
 ## Tech Stack
 
-- Python
-- FastAPI
-- PostgreSQL
-- SQLAlchemy
-- Pandas
-- sentence-transformers
-- FAISS
-- Docker
+- Python, FastAPI  
+- PostgreSQL, SQLAlchemy  
+- Pandas  
+- sentence-transformers  
+- FAISS  
+- Docker  
+
+---
+
+## Architecture
+
+```
+Source CSV
+ → ingestion & validation
+ → PostgreSQL
+ → cleaning & skill extraction
+ → job embeddings / chunk embeddings
+ → FAISS indexes
+ → FastAPI APIs (jobs / analytics / recommend / rag)
+```
 
 ---
 
@@ -83,11 +79,16 @@ jobscope/
 │   ├── models.py
 │   ├── schemas.py
 │   ├── crud.py
+│   ├── filters.py
+│   ├── recommendation.py
+│   ├── logging.py
+│   ├── middleware.py
 │   └── api/
 │       ├── jobs.py
 │       ├── analytics.py
 │       ├── recommend.py
-│       └── rag.py
+│       ├── rag.py
+│       └── health.py
 │
 ├── pipeline/
 │   ├── create_tables.py
@@ -97,14 +98,29 @@ jobscope/
 │   ├── process_jobs.py
 │   ├── build_embeddings.py
 │   ├── build_chunk_index.py
-│   └── test_chunk_search.py
+│   ├── evaluate_rag.py
+│   ├── rebuild_all.py
+│   └── skill_dict.py
 │
 ├── rag/
 │   ├── chunking.py
 │   ├── embeddings.py
 │   ├── vector_store.py
 │   ├── retriever.py
-│   └── qa.py
+│   ├── filters.py
+│   ├── qa.py
+│   ├── answer_generation.py
+│   └── llm_client.py
+│
+├── tests/
+│   ├── test_ingest_utils.py
+│   ├── test_recommendation_logic.py
+│   ├── test_rag_logic.py
+│   ├── test_answer_generation.py
+│   ├── test_chunking.py
+│   ├── test_skill_extraction.py
+│   ├── test_jobs_query_params.py
+│   └── test_filter_layer.py
 │
 ├── data/
 │   ├── raw/
@@ -120,142 +136,111 @@ jobscope/
 
 ---
 
-## Architecture
-
-```
-CSV
- → ingestion
- → PostgreSQL
- → cleaning / skill extraction
- → job embeddings / chunk embeddings
- → FAISS index
- → FastAPI APIs
-```
-
----
-
-## Data Model
-
-### jobs
-
-Main job posting table.
-
-Fields:
-
-- id
-- title
-- company
-- location
-- category
-- seniority
-- description
-- cleaned_description
-- detected_skills
-- date_posted
-- url
-
----
-
-## Pipeline Overview
+## Pipeline
 
 ### 1. Ingestion
 
-Job postings are loaded from CSV and inserted into PostgreSQL.
-
-### 2. Cleaning
-
-Descriptions are normalized into cleaned_description for analytics and semantic retrieval.
-
-### 3. Skill Extraction
-
-A compact rule-based dictionary is used to detect common skills such as:
-
-- Python
-- SQL
-- FastAPI
-- Docker
-- AWS
-- PyTorch
-- ETL
-
-The extracted result is stored in detected_skills.
-
-### 4. Recommendation
-
-Job descriptions are embedded with all-MiniLM-L6-v2.
-
-Similarity is computed over normalized embeddings to return related job postings.
-
-### 5. Retrieval / RAG
-
-Job descriptions are chunked, embedded, and indexed with FAISS.
-
-The /rag/ask endpoint retrieves relevant chunks and returns:
-
-- answer
-- matched chunks
-- source metadata
+- CSV → PostgreSQL
+- required field validation  
+- URL-based upsert  
+- normalization (location / category / seniority)  
+- inserted / updated / skipped tracking  
 
 ---
 
-## API Endpoints
+### 2. Cleaning
+
+- description → cleaned_description  
+- used for analytics, recommendation, retrieval  
+
+---
+
+### 3. Skill Extraction
+
+- rule-based taxonomy + alias handling  
+
+Examples:
+
+- postgres, postgresql → postgresql  
+- sklearn, scikit learn → scikit-learn  
+
+- stored in detected_skills  
+
+---
+
+### 4. Recommendation
+
+- embeddings: all-MiniLM-L6-v2  
+
+Hybrid scoring:
+
+- embedding similarity  
+- skill overlap  
+- category match  
+- seniority match  
+
+---
+
+### 5. Retrieval / RAG
+
+- sentence-aware chunking  
+- FAISS indexing  
+
+Includes:
+
+- semantic retrieval  
+- keyword-based reranking  
+- source deduplication  
+- optional LLM synthesis (fallback: extractive)  
+
+---
+
+### 6. Rebuild & Evaluation
+
+- pipeline/rebuild_all.py  
+- pipeline/evaluate_rag.py  
+
+---
+
+## API
 
 ### GET /jobs
 
-Returns stored job postings.
-
 Supports:
 
-- keyword
-- location
-- category
-- limit
-
-Example:
+- keyword, location, category, seniority  
+- page, size  
+- sort_by, sort_order  
 
 ```
-GET /jobs?location=Berlin&category=Backend&limit=10
+GET /jobs?location=Berlin&category=Backend&seniority=Junior&page=1&size=10&sort_by=date_posted&sort_order=desc
 ```
 
 ---
 
 ### GET /analytics/skills
 
-Returns top detected skills.
-
-Supports:
-
-- category
-- seniority
-- limit
-
-Example:
-
 ```
-GET /analytics/skills?category=Analytics&seniority=Junior
+GET /analytics/skills?location=Berlin&category=Backend&seniority=Junior
 ```
 
 ---
 
 ### GET /recommend/{job_id}
 
-Returns similar jobs based on description embeddings.
-
-Example:
+- embedding score  
+- skill overlap  
+- metadata match  
 
 ```
-GET /recommend/1?limit=5
+GET /recommend/1?limit=5&same_category_only=true
 ```
 
 ---
 
 ### POST /rag/ask
 
-Retrieval-based Q&A over job description chunks.
-
-Example request:
-
-```json
+```
 {
   "question": "Which backend jobs require FastAPI and PostgreSQL?",
   "category": "Backend",
@@ -263,133 +248,32 @@ Example request:
 }
 ```
 
-Example response:
-
-```json
-{
-  "answer": "...",
-  "sources": [
-    {
-      "job_id": 1,
-      "title": "Backend Engineer",
-      "company": "HelloTech GmbH",
-      "location": "Berlin",
-      "category": "Backend",
-      "seniority": "Junior",
-      "chunk_id": 0,
-      "score": 0.82
-    }
-  ],
-  "matched_chunks": [
-    "build and maintain backend apis using python fastapi postgresql and docker ..."
-  ]
-}
-```
-
 ---
 
-## Sample Data
+### GET /health/indexes
 
-The current MVP uses manually curated Germany-based sample postings to validate:
-
-- ingestion flow
-- analytics logic
-- recommendation behavior
-- retrieval quality
-
-### Cities included
-
-- Berlin
-- Munich
-- Frankfurt
-- Hamburg
-- Cologne
-- Stuttgart
-- Dusseldorf
-- Leipzig
-
-### Categories included
-
-- Backend
-- Data
-- Analytics
-- ML
+- embedding / chunk index metadata  
 
 ---
 
 ## Running Locally
 
-### 1. Create virtual environment
-
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-```
-
-### 2. Install dependencies
-
-```bash
 pip install -r requirements.txt
-```
 
-### 3. Set environment variables
-
-Create .env from .env.example.
-
-Example:
-
-```
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/jobscope
-```
-
-### 4. Run API
-
-```bash
 uvicorn app.main:app --reload
 ```
 
 Docs:
-
-```
 http://127.0.0.1:8000/docs
-```
 
 ---
 
 ## Running with Docker
 
-### 1. Start services
-
 ```bash
 docker compose up --build
+docker compose exec api python -m pipeline.rebuild_all
 ```
-
-### 2. Initialize data
-
-```bash
-docker compose exec api python -m pipeline.create_tables
-docker compose exec api python -m pipeline.ingest_jobs
-docker compose exec api python -m pipeline.process_jobs
-docker compose exec api python -m pipeline.build_embeddings
-docker compose exec api python -m pipeline.build_chunk_index
-```
-
-### 3. Open docs
-
-```
-http://127.0.0.1:8000/docs
-```
-
----
-
-## Example Workflow
-
-A typical setup flow:
-
-1. Start PostgreSQL and API
-2. Create database tables
-3. Load CSV job postings
-4. Clean descriptions and extract skills
-5. Build job embeddings for recommendation
-6. Build chunk index for retrieval
-7. Query APIs via Swagger or curl
