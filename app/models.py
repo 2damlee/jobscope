@@ -24,7 +24,11 @@ class Job(Base):
     ingested_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     last_processed_at = Column(DateTime, nullable=True)
 
-
+    source_hash = Column(String, nullable=True, index=True)
+    skills_extracted_at = Column(DateTime, nullable=True)
+    embedded_at = Column(DateTime, nullable=True)
+    chunked_at = Column(DateTime, nullable=True)
+    
 class PipelineRun(Base):
     __tablename__ = "pipeline_runs"
 

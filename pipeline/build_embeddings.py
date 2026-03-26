@@ -33,7 +33,6 @@ def build_embeddings():
             job_ids.append(job.id)
 
         embeddings = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
-
         np.save(EMBEDDING_PATH, embeddings)
 
         with open(JOB_IDS_PATH, "w") as f:
