@@ -33,7 +33,6 @@ def build_embeddings():
             job_ids.append(job.id)
 
         embeddings = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
-
         np.save(EMBEDDING_PATH, embeddings)
 
         with open(JOB_IDS_PATH, "w") as f:
@@ -50,6 +49,14 @@ def build_embeddings():
         with open(EMBEDDING_META_PATH, "w") as f:
             json.dump(meta, f, indent=2)
 
+        now = datetime.utcnow()
+
+        db.query(Job).filter(Job.cleaned_description.isnot(None)).update(
+            {"embedded_at": now},
+            synchronize_session=False,
+        )
+        db.commit()
+        
         finish_run(
             db,
             run,

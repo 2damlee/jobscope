@@ -16,6 +16,8 @@ def process_jobs():
     run = start_run(db, pipeline_name="process_jobs")
 
     processed = 0
+    jobs_without_skills = 0
+    empty_cleaned_description = 0
 
     try:
         jobs = db.query(Job).filter(Job.processing_status == "pending").all()
@@ -24,10 +26,18 @@ def process_jobs():
             cleaned = clean_description(job.description)
             skills = extract_skills(cleaned)
 
+            if not cleaned:
+                empty_cleaned_description += 1
+            if not skills:
+                jobs_without_skills += 1
+
+            now = datetime.utcnow()
+
             job.cleaned_description = cleaned
             job.detected_skills = ",".join(skills)
             job.processing_status = "processed"
-            job.last_processed_at = datetime.utcnow()
+            job.last_processed_at = now
+            job.skills_extracted_at = now
 
             processed += 1
 
@@ -38,7 +48,11 @@ def process_jobs():
             run,
             status="success",
             output_rows=processed,
-            metrics={"processed_jobs": processed},
+            metrics={
+                "processed_jobs": processed,
+                "jobs_without_skills": jobs_without_skills,
+                "empty_cleaned_description": empty_cleaned_description,
+            },
         )
 
         print(f"Processed {processed} jobs.")
@@ -53,7 +67,6 @@ def process_jobs():
             metrics={"processed_jobs": processed},
             error_message=str(e),
         )
-        print("Processing failed:", e)
         raise
     finally:
         db.close()
