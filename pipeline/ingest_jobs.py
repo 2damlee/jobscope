@@ -1,15 +1,16 @@
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-import pandas as pd
 from app.db import SessionLocal
 from app.models import Job
-
+from pipeline.run_tracker import finish_run, start_run
 
 CSV_PATH = "data/raw/jobs.csv"
-MIN_DESCRIPTION_LENGTH = 20
+MIN_DESCRIPTION_LENGTH = 30
 
 
 def load_csv(path: str) -> pd.DataFrame:
@@ -20,7 +21,7 @@ def clean_text(value):
     if pd.isna(value):
         return None
     text = str(value).strip()
-    return text if text else None
+    return text or None
 
 
 def normalize_location(value):
@@ -34,7 +35,6 @@ def normalize_location(value):
         "frankfurt, germany": "Frankfurt",
         "hamburg, germany": "Hamburg",
     }
-
     return mapping.get(text.lower(), text)
 
 
@@ -88,6 +88,13 @@ def ingest_jobs():
         "short_description": 0,
     }
 
+    run = start_run(
+        db,
+        pipeline_name="ingest_jobs",
+        source_name=CSV_PATH,
+        input_rows=len(df),
+    )
+
     try:
         for _, row in df.iterrows():
             title = clean_text(row.get("title"))
@@ -115,6 +122,7 @@ def ingest_jobs():
                 existing_job.seniority = seniority
                 existing_job.description = description
                 existing_job.date_posted = date_posted
+                existing_job.processing_status = "pending"
                 updated += 1
             else:
                 job = Job(
@@ -128,11 +136,23 @@ def ingest_jobs():
                     detected_skills=None,
                     date_posted=date_posted,
                     url=url,
+                    processing_status="pending",
                 )
                 db.add(job)
                 inserted += 1
 
         db.commit()
+
+        finish_run(
+            db,
+            run,
+            status="success",
+            output_rows=inserted + updated,
+            inserted_rows=inserted,
+            updated_rows=updated,
+            skipped_rows=skipped,
+            metrics={"skip_reasons": skip_reasons},
+        )
 
         print(f"Inserted: {inserted}")
         print(f"Updated: {updated}")
@@ -141,9 +161,16 @@ def ingest_jobs():
 
     except Exception as e:
         db.rollback()
+        finish_run(
+            db,
+            run,
+            status="failed",
+            skipped_rows=skipped,
+            metrics={"skip_reasons": skip_reasons},
+            error_message=str(e),
+        )
         print("Ingest failed:", e)
         raise
-
     finally:
         db.close()
 
