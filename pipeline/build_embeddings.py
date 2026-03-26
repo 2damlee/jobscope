@@ -49,6 +49,14 @@ def build_embeddings():
         with open(EMBEDDING_META_PATH, "w") as f:
             json.dump(meta, f, indent=2)
 
+        now = datetime.utcnow()
+
+        db.query(Job).filter(Job.cleaned_description.isnot(None)).update(
+            {"embedded_at": now},
+            synchronize_session=False,
+        )
+        db.commit()
+        
         finish_run(
             db,
             run,

@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -8,6 +9,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from app.db import SessionLocal
 from app.models import Job
 from pipeline.run_tracker import finish_run, start_run
+from pipeline.state_utils import build_source_hash, has_source_changed
 
 CSV_PATH = "data/raw/jobs.csv"
 MIN_DESCRIPTION_LENGTH = 30
@@ -75,6 +77,16 @@ def is_valid_row(title, description, url):
     return True, None
 
 
+def reset_downstream_state(job: Job):
+    job.processing_status = "pending"
+    job.cleaned_description = None
+    job.detected_skills = None
+    job.last_processed_at = None
+    job.skills_extracted_at = None
+    job.embedded_at = None
+    job.chunked_at = None
+
+
 def ingest_jobs():
     df = load_csv(CSV_PATH)
     db = SessionLocal()
@@ -82,6 +94,9 @@ def ingest_jobs():
     inserted = 0
     updated = 0
     skipped = 0
+    changed = 0
+    unchanged = 0
+
     skip_reasons = {
         "missing_url": 0,
         "missing_title": 0,
@@ -106,6 +121,17 @@ def ingest_jobs():
             date_posted = parse_date(row.get("date_posted"))
             url = clean_text(row.get("url"))
 
+            source_hash = build_source_hash(
+                title=title,
+                company=company,
+                location=location,
+                category=category,
+                seniority=seniority,
+                description=description,
+                date_posted=date_posted,
+                url=url,
+            )
+
             valid, reason = is_valid_row(title, description, url)
             if not valid:
                 skipped += 1
@@ -115,6 +141,10 @@ def ingest_jobs():
             existing_job = db.query(Job).filter(Job.url == url).first()
 
             if existing_job:
+                if not has_source_changed(existing_job.source_hash, source_hash):
+                    unchanged += 1
+                    continue
+
                 existing_job.title = title
                 existing_job.company = company
                 existing_job.location = location
@@ -122,8 +152,13 @@ def ingest_jobs():
                 existing_job.seniority = seniority
                 existing_job.description = description
                 existing_job.date_posted = date_posted
-                existing_job.processing_status = "pending"
+                existing_job.source_hash = source_hash
+                existing_job.ingested_at = datetime.utcnow()
+
+                reset_downstream_state(existing_job)
+
                 updated += 1
+                changed += 1
             else:
                 job = Job(
                     title=title,
@@ -136,10 +171,12 @@ def ingest_jobs():
                     detected_skills=None,
                     date_posted=date_posted,
                     url=url,
+                    source_hash=source_hash,
                     processing_status="pending",
                 )
                 db.add(job)
                 inserted += 1
+                changed += 1
 
         db.commit()
 
@@ -151,11 +188,17 @@ def ingest_jobs():
             inserted_rows=inserted,
             updated_rows=updated,
             skipped_rows=skipped,
-            metrics={"skip_reasons": skip_reasons},
+            metrics={
+                "skip_reasons": skip_reasons,
+                "changed_rows": changed,
+                "unchanged_rows": unchanged,
+            },
         )
 
         print(f"Inserted: {inserted}")
         print(f"Updated: {updated}")
+        print(f"Unchanged: {unchanged}")
+        print(f"Changed: {changed}")
         print(f"Skipped: {skipped}")
         print(f"Skip reasons: {skip_reasons}")
 
@@ -166,7 +209,11 @@ def ingest_jobs():
             run,
             status="failed",
             skipped_rows=skipped,
-            metrics={"skip_reasons": skip_reasons},
+            metrics={
+                "skip_reasons": skip_reasons,
+                "changed_rows": changed,
+                "unchanged_rows": unchanged,
+            },
             error_message=str(e),
         )
         print("Ingest failed:", e)
