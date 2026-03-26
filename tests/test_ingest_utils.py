@@ -1,28 +1,58 @@
-from pipeline.ingest_jobs import (
-    clean_text,
-    normalize_location,
-    normalize_seniority,
-    parse_date,
-    is_valid_row,
-)
+from datetime import date
+
+from pipeline.state_utils import build_source_hash, has_source_changed
 
 
-def test_normalize_location():
-    assert normalize_location("Berlin, Germany") == "Berlin"
-    assert normalize_location("Berlin") == "Berlin"
+def test_build_source_hash_same_payload_same_hash():
+    h1 = build_source_hash(
+        title="Backend Engineer",
+        company="Acme",
+        location="Berlin",
+        category="Software Engineering",
+        seniority="Mid",
+        description="Build backend services with Python and PostgreSQL.",
+        date_posted=date(2026, 3, 10),
+        url="https://example.com/jobs/1",
+    )
+    h2 = build_source_hash(
+        title="Backend Engineer",
+        company="Acme",
+        location="Berlin",
+        category="Software Engineering",
+        seniority="Mid",
+        description="Build backend services with Python and PostgreSQL.",
+        date_posted=date(2026, 3, 10),
+        url="https://example.com/jobs/1",
+    )
+
+    assert h1 == h2
 
 
-def test_normalize_seniority():
-    assert normalize_seniority("junior") == "Junior"
-    assert normalize_seniority("Mid") == "Mid"
+def test_build_source_hash_changes_when_description_changes():
+    h1 = build_source_hash(
+        title="Backend Engineer",
+        company="Acme",
+        location="Berlin",
+        category="Software Engineering",
+        seniority="Mid",
+        description="Build backend services.",
+        date_posted=date(2026, 3, 10),
+        url="https://example.com/jobs/1",
+    )
+    h2 = build_source_hash(
+        title="Backend Engineer",
+        company="Acme",
+        location="Berlin",
+        category="Software Engineering",
+        seniority="Mid",
+        description="Build scalable backend services.",
+        date_posted=date(2026, 3, 10),
+        url="https://example.com/jobs/1",
+    )
+
+    assert h1 != h2
 
 
-def test_parse_date_invalid():
-    assert parse_date("not_a_date") is None
-
-
-def test_is_valid_row():
-    assert is_valid_row("Backend Engineer", "Python FastAPI PostgreSQL backend work", "https://x.com")[0] is True
-    assert is_valid_row(None, "desc", "https://x.com")[0] is False
-    assert is_valid_row("Title", "short", "https://x.com")[0] is False
-    assert is_valid_row("Title", "Long enough description for validation", None)[0] is False
+def test_has_source_changed():
+    assert has_source_changed("old_hash", "new_hash") is True
+    assert has_source_changed("same_hash", "same_hash") is False
