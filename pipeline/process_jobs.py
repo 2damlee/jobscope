@@ -24,6 +24,7 @@ def process_single_job(job: Job) -> dict:
     job.detected_skills = ",".join(skills)
     job.processing_status = "processed"
     job.last_processed_at = now
+    job.skills_extracted_at = now
 
     return {
         "job_id": job.id,

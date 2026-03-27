@@ -1,5 +1,5 @@
 from datetime import date
-
+import pandas as pd
 from pipeline.state_utils import build_source_hash
 
 
@@ -44,3 +44,37 @@ def test_source_hash_changes_when_title_changes():
     )
 
     assert first != second
+    
+def test_dedupe_rows_by_url_keeps_last_duplicate():
+    df = pd.DataFrame(
+        [
+            {
+                "title": "Data Engineer",
+                "company": "A",
+                "location": "Berlin, Germany",
+                "category": "Data Engineering",
+                "seniority": "Senior",
+                "description": "A" * 40,
+                "date_posted": "2026-03-08",
+                "url": "https://example.com/jobs/berlin-data-engineer-002",
+            },
+            {
+                "title": "Data Engineer",
+                "company": "B",
+                "location": "Berlin, Germany",
+                "category": "Data Engineering",
+                "seniority": "Senior",
+                "description": "B" * 50,
+                "date_posted": "2026-03-20",
+                "url": "https://example.com/jobs/berlin-data-engineer-002",
+            },
+        ]
+    )
+
+    prepared_rows, skipped, skip_reasons, duplicate_urls_in_file = dedupe_rows_by_url(df)
+
+    assert skipped == 0
+    assert duplicate_urls_in_file == 1
+    assert len(prepared_rows) == 1
+    assert prepared_rows[0]["company"] == "B"
+    assert prepared_rows[0]["description"] == "B" * 50
