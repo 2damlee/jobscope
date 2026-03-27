@@ -32,7 +32,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--full-rebuild",
         action="store_true",
-        help="Force full pipeline rebuild.",
+        help="Run all pipeline stages in full rebuild mode.",
     )
     args = parser.parse_args()
 

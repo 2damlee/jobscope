@@ -25,6 +25,7 @@ def run_skill_extraction(cleaned_text: str) -> list[str]:
 
 def process_jobs():
     db = SessionLocal()
+    jobs = []
     run = start_run(db, pipeline_name="process_jobs")
 
     processed = 0
@@ -60,6 +61,7 @@ def process_jobs():
             status="success",
             output_rows=processed,
             metrics={
+                "input_jobs": len(jobs),
                 "processed_jobs": processed,
                 "jobs_without_skills": jobs_without_skills,
                 "empty_cleaned_description": empty_cleaned_description,
@@ -74,7 +76,10 @@ def process_jobs():
             run,
             status="failed",
             output_rows=processed,
-            metrics={"processed_jobs": processed},
+            metrics={
+                "input_jobs": len(jobs),
+                "processed_jobs": processed,
+            },
             error_message=str(e),
         )
         raise
