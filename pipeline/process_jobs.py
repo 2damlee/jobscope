@@ -11,35 +11,45 @@ from pipeline.extract_skills import extract_skills
 from pipeline.run_tracker import finish_run, start_run
 
 
+def select_pending_jobs(db):
+    return db.query(Job).filter(Job.processing_status == "pending").all()
+
+
+def process_single_job(job: Job) -> dict:
+    cleaned = clean_description(job.description)
+    skills = extract_skills(cleaned)
+    now = datetime.utcnow()
+
+    job.cleaned_description = cleaned
+    job.detected_skills = ",".join(skills)
+    job.processing_status = "processed"
+    job.last_processed_at = now
+
+    return {
+        "job_id": job.id,
+        "skills_count": len(skills),
+        "cleaned_empty": not bool(cleaned),
+    }
+
+
+def summarize_results(results: list[dict]) -> dict:
+    return {
+        "processed_jobs": len(results),
+        "jobs_without_skills": sum(1 for r in results if r["skills_count"] == 0),
+        "empty_cleaned_description": sum(1 for r in results if r["cleaned_empty"]),
+    }
+
+
 def process_jobs():
     db = SessionLocal()
+    jobs = []
     run = start_run(db, pipeline_name="process_jobs")
 
-    processed = 0
-    jobs_without_skills = 0
-    empty_cleaned_description = 0
-
     try:
-        jobs = db.query(Job).filter(Job.processing_status == "pending").all()
-
-        for job in jobs:
-            cleaned = clean_description(job.description)
-            skills = extract_skills(cleaned)
-
-            if not cleaned:
-                empty_cleaned_description += 1
-            if not skills:
-                jobs_without_skills += 1
-
-            now = datetime.utcnow()
-
-            job.cleaned_description = cleaned
-            job.detected_skills = ",".join(skills)
-            job.processing_status = "processed"
-            job.last_processed_at = now
-            job.skills_extracted_at = now
-
-            processed += 1
+        jobs = select_pending_jobs(db)
+        results = [process_single_job(job) for job in jobs]
+        summary = summarize_results(results)
+        summary["input_jobs"] = len(jobs)
 
         db.commit()
 
@@ -47,15 +57,10 @@ def process_jobs():
             db,
             run,
             status="success",
-            output_rows=processed,
-            metrics={
-                "processed_jobs": processed,
-                "jobs_without_skills": jobs_without_skills,
-                "empty_cleaned_description": empty_cleaned_description,
-            },
+            output_rows=summary["processed_jobs"],
+            metrics=summary,
         )
-
-        print(f"Processed {processed} jobs.")
+        print(f"Processed {summary['processed_jobs']} jobs.")
 
     except Exception as e:
         db.rollback()
@@ -63,10 +68,11 @@ def process_jobs():
             db,
             run,
             status="failed",
-            output_rows=processed,
-            metrics={"processed_jobs": processed},
+            output_rows=0,
+            metrics={"input_jobs": len(jobs)},
             error_message=str(e),
         )
+        print("Processing failed:", e)
         raise
     finally:
         db.close()
