@@ -17,11 +17,15 @@ def test_generate_answer_jobs():
         }
     ]
 
-    answer = generate_answer("Which backend jobs require FastAPI?", results)
+    answer, answer_type = generate_answer("Which backend jobs require FastAPI?", results)
+
+    assert answer_type == "extractive"
     assert "Backend Engineer" in answer
     assert "FastAPI" in answer
 
 
 def test_generate_answer_empty():
-    answer = generate_answer("Which backend jobs require FastAPI?", [])
+    answer, answer_type = generate_answer("Which backend jobs require FastAPI?", [])
+
+    assert answer_type == "extractive"
     assert "No relevant" in answer
