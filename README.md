@@ -118,32 +118,62 @@ jobscope/
 
 ## Pipeline
 
+The pipeline follows an incremental-first design rather than a full rebuild approach.
+
+Each job row tracks processing state using timestamps and status fields, allowing selective reprocessing only when data changes.
+
+---
+
 ### 1. Ingestion
 
 - reads `data/raw/jobs.csv`
 - validates required fields
 - normalizes selected fields
 - upserts into PostgreSQL by URL
+- detects changes using a source hash
+- resets downstream processing state only when data changes
 
 ---
 
 ### 2. Processing
 
+- selects jobs with `processing_status = pending`
 - cleans descriptions
 - extracts skills using a rule-based taxonomy and alias mapping
-- stores processed text for downstream use
+- updates:
+  - `cleaned_description`
+  - `detected_skills`
+  - `skills_extracted_at`
+  - `processing_status`
 
 ---
 
-### 3. Embeddings and Indexing
+### 3. Embeddings
 
 - builds job-level embeddings for recommendation
-- builds chunk-level embeddings and FAISS index for retrieval
-- stores generated artifacts in `data/processed/`
+- **skips rebuild if no jobs require embedding updates**
+- rebuilds embeddings only when:
+  - new jobs are added
+  - existing jobs are updated
+
+- updates:
+  - `embedded_at`
 
 ---
 
-### 4. Recommendation
+### 4. Chunk Index
+
+- splits job descriptions into chunks
+- builds chunk embeddings and FAISS index for retrieval
+- **skips rebuild if no jobs require chunk updates**
+- rebuilds only when upstream data has changed
+
+- updates:
+  - `chunked_at`
+
+---
+
+### 5. Recommendation
 
 Hybrid recommendation combines:
 
@@ -154,7 +184,7 @@ Hybrid recommendation combines:
 
 ---
 
-### 5. Retrieval / RAG
+### 6. Retrieval / RAG
 
 RAG flow includes:
 
@@ -166,13 +196,13 @@ RAG flow includes:
 
 ---
 
-### 6. Operations
+### 7. Operations
 
 - `pipeline_runs` stores pipeline execution metadata
 - `/health/indexes` returns artifact metadata
 - `/health/pipeline` returns recent pipeline run summaries
-- `pipeline/flows.py` defines the Prefect flow
-- `pipeline/rebuild_all.py` runs the pipeline stages in sequence for local execution
+- `pipeline/rebuild_all.py` runs the pipeline stages sequentially (local runner)
+- `pipeline/flows.py` provides a Prefect-based orchestration wrapper
 
 ---
 
@@ -262,6 +292,4 @@ docker compose exec api python -m pipeline.rebuild_all
 
 ## Notes
 
-This project keeps the retrieval and recommendation layer lightweight and interview-friendly.
-
-The current vector artifacts are file-based. A natural next step is to extend the incremental pipeline further or move vector storage into PostgreSQL with pgvector or a dedicated vector store.
+This project keeps the retrieval and recommendation layer lightweight and interview-friendly, while focusing on realistic pipeline design (incremental processing, state tracking, and conditional rebuilds).
