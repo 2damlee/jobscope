@@ -11,6 +11,18 @@ from pipeline.extract_skills import extract_skills
 from pipeline.run_tracker import finish_run, start_run
 
 
+def select_jobs_for_processing(db):
+    return db.query(Job).filter(Job.processing_status == "pending").all()
+
+
+def run_cleaning(job: Job) -> str:
+    return clean_description(job.description)
+
+
+def run_skill_extraction(cleaned_text: str) -> list[str]:
+    return extract_skills(cleaned_text)
+
+
 def process_jobs():
     db = SessionLocal()
     run = start_run(db, pipeline_name="process_jobs")
@@ -20,11 +32,11 @@ def process_jobs():
     empty_cleaned_description = 0
 
     try:
-        jobs = db.query(Job).filter(Job.processing_status == "pending").all()
+        jobs = select_jobs_for_processing(db)
 
         for job in jobs:
-            cleaned = clean_description(job.description)
-            skills = extract_skills(cleaned)
+            cleaned = run_cleaning(job)
+            skills = run_skill_extraction(cleaned)
 
             if not cleaned:
                 empty_cleaned_description += 1
@@ -32,7 +44,6 @@ def process_jobs():
                 jobs_without_skills += 1
 
             now = datetime.utcnow()
-
             job.cleaned_description = cleaned
             job.detected_skills = ",".join(skills)
             job.processing_status = "processed"
@@ -54,7 +65,6 @@ def process_jobs():
                 "empty_cleaned_description": empty_cleaned_description,
             },
         )
-
         print(f"Processed {processed} jobs.")
 
     except Exception as e:
