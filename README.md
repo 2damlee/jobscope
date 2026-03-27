@@ -1,8 +1,21 @@
-# JobScope: AI-Powered Job Intelligence Platform
+# JobScope
 
-JobScope is a pipeline-oriented backend/data system for ingesting, processing, and serving job posting data.
+JobScope is a pipeline-oriented backend and data engineering project for ingesting, processing, indexing, and serving job posting data.
 
-It focuses on combining data engineering workflows with API-based serving, recommendation, and retrieval.
+It is built to show an end-to-end workflow across data ingestion, transformation, retrieval, recommendation, and API serving.
+
+## Overview
+
+Core flow:
+
+```text
+CSV ingestion -> PostgreSQL -> cleaning / skill extraction -> embeddings / chunk index -> FastAPI APIs
+```
+
+The project focuses on two areas:
+
+- pipeline-oriented data processing
+- API-based serving for search, analytics, recommendation, and retrieval
 
 ---
 
@@ -20,50 +33,42 @@ It focuses on combining data engineering workflows with API-based serving, recom
 
 ---
 
-## Overview
-
-Core flow:
-
-```
-CSV ingestion → PostgreSQL → cleaning / skill extraction → embeddings → indexing → FastAPI
-```
-
----
-
 ## Features
 
-- CSV ingestion with validation and upsert logic  
-- PostgreSQL-backed storage  
-- Job description cleaning  
-- Rule-based skill extraction (alias normalization)  
-- Job API with filtering, sorting, pagination  
-- Skill analytics  
-- Hybrid recommendation (embeddings + structured signals)  
-- Retrieval-based Q&A (RAG pipeline)  
+- CSV ingestion with validation, normalization, and URL-based upsert
+- PostgreSQL-backed storage
+- Cleaning and rule-based skill extraction
+- Hybrid recommendation using embeddings and structured metadata
+- Retrieval-based Q&A with chunking, semantic retrieval, reranking, and deduplication
+- Pipeline run tracking and health checks
+- Prefect flow wrapper for pipeline orchestration
+- Docker-based local development
 
 ---
 
 ## Tech Stack
 
-- Python, FastAPI  
-- PostgreSQL, SQLAlchemy  
-- Pandas  
-- sentence-transformers  
-- FAISS  
-- Docker  
+- Python
+- FastAPI
+- PostgreSQL
+- SQLAlchemy
+- Pandas
+- sentence-transformers
+- FAISS
+- Prefect
+- Docker
 
 ---
 
 ## Architecture
 
-```
+```text
 Source CSV
- → ingestion & validation
- → PostgreSQL
- → cleaning & skill extraction
- → job embeddings / chunk embeddings
- → FAISS indexes
- → FastAPI APIs (jobs / analytics / recommend / rag)
+  -> ingest and validate
+  -> store in PostgreSQL
+  -> clean descriptions and extract skills
+  -> build job embeddings and chunk index
+  -> serve APIs for jobs, analytics, recommendation, and RAG
 ```
 
 ---
@@ -73,65 +78,40 @@ Source CSV
 ```text
 jobscope/
 ├── app/
-│   ├── main.py
+│   ├── api/
 │   ├── config.py
-│   ├── db.py
-│   ├── models.py
-│   ├── schemas.py
 │   ├── crud.py
-│   ├── filters.py
-│   ├── recommendation.py
+│   ├── db.py
 │   ├── logging.py
+│   ├── main.py
 │   ├── middleware.py
-│   └── api/
-│       ├── jobs.py
-│       ├── analytics.py
-│       ├── recommend.py
-│       ├── rag.py
-│       └── health.py
-│
+│   ├── models.py
+│   ├── recommendation.py
+│   └── schemas.py
 ├── pipeline/
-│   ├── create_tables.py
-│   ├── ingest_jobs.py
-│   ├── clean_jobs.py
-│   ├── extract_skills.py
-│   ├── process_jobs.py
-│   ├── build_embeddings.py
 │   ├── build_chunk_index.py
+│   ├── build_embeddings.py
+│   ├── clean_jobs.py
+│   ├── create_tables.py
 │   ├── evaluate_rag.py
+│   ├── extract_skills.py
+│   ├── flows.py
+│   ├── ingest_jobs.py
+│   ├── process_jobs.py
 │   ├── rebuild_all.py
-│   └── skill_dict.py
-│
+│   ├── rebuild_utils.py
+│   ├── run_tracker.py
+│   ├── skill_dict.py
+│   └── state_utils.py
 ├── rag/
-│   ├── chunking.py
-│   ├── embeddings.py
-│   ├── vector_store.py
-│   ├── retriever.py
-│   ├── filters.py
-│   ├── qa.py
-│   ├── answer_generation.py
-│   └── llm_client.py
-│
 ├── tests/
-│   ├── test_ingest_utils.py
-│   ├── test_recommendation_logic.py
-│   ├── test_rag_logic.py
-│   ├── test_answer_generation.py
-│   ├── test_chunking.py
-│   ├── test_skill_extraction.py
-│   ├── test_jobs_query_params.py
-│   └── test_filter_layer.py
-│
 ├── data/
 │   ├── raw/
-│   │   └── jobs.csv
 │   └── processed/
-│
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
-├── README.md
-└── .env.example
+└── README.md
 ```
 
 ---
@@ -140,65 +120,59 @@ jobscope/
 
 ### 1. Ingestion
 
-- CSV → PostgreSQL
-- required field validation  
-- URL-based upsert  
-- normalization (location / category / seniority)  
-- inserted / updated / skipped tracking  
+- reads `data/raw/jobs.csv`
+- validates required fields
+- normalizes selected fields
+- upserts into PostgreSQL by URL
 
 ---
 
-### 2. Cleaning
+### 2. Processing
 
-- description → cleaned_description  
-- used for analytics, recommendation, retrieval  
+- cleans descriptions
+- extracts skills using a rule-based taxonomy and alias mapping
+- stores processed text for downstream use
 
 ---
 
-### 3. Skill Extraction
+### 3. Embeddings and Indexing
 
-- rule-based taxonomy + alias handling  
-
-Examples:
-
-- postgres, postgresql → postgresql  
-- sklearn, scikit learn → scikit-learn  
-
-- stored in detected_skills  
+- builds job-level embeddings for recommendation
+- builds chunk-level embeddings and FAISS index for retrieval
+- stores generated artifacts in `data/processed/`
 
 ---
 
 ### 4. Recommendation
 
-- embeddings: all-MiniLM-L6-v2  
+Hybrid recommendation combines:
 
-Hybrid scoring:
-
-- embedding similarity  
-- skill overlap  
-- category match  
-- seniority match  
+- embedding similarity
+- skill overlap
+- category match
+- seniority match
 
 ---
 
 ### 5. Retrieval / RAG
 
-- sentence-aware chunking  
-- FAISS indexing  
+RAG flow includes:
 
-Includes:
-
-- semantic retrieval  
-- keyword-based reranking  
-- source deduplication  
-- optional LLM synthesis (fallback: extractive)  
+- sentence-aware chunking
+- semantic retrieval
+- keyword reranking
+- source deduplication
+- optional LLM synthesis with extractive fallback
 
 ---
 
-### 6. Rebuild & Evaluation
+### 6. Operations
 
-- pipeline/rebuild_all.py  
-- pipeline/evaluate_rag.py  
+- `pipeline_runs` stores pipeline execution metadata
+- `/health/indexes` returns artifact metadata
+- `/health/pipeline` returns recent pipeline run summaries
+- `pipeline/flows.py` defines the Prefect flow
+- `pipeline/rebuild_all.py` runs the pipeline stages in sequence for local execution
 
 ---
 
@@ -206,33 +180,31 @@ Includes:
 
 ### GET /jobs
 
-Supports:
+Returns job listings with filter support.
 
-- keyword, location, category, seniority  
-- page, size  
-- sort_by, sort_order  
+Example:
 
-```
-GET /jobs?location=Berlin&category=Backend&seniority=Junior&page=1&size=10&sort_by=date_posted&sort_order=desc
+```text
+GET /jobs?location=Berlin&category=Data%20Engineering
 ```
 
 ---
 
 ### GET /analytics/skills
 
-```
-GET /analytics/skills?location=Berlin&category=Backend&seniority=Junior
+Returns skill frequency analytics.
+
+```text
+GET /analytics/skills?location=Berlin
 ```
 
 ---
 
 ### GET /recommend/{job_id}
 
-- embedding score  
-- skill overlap  
-- metadata match  
+Returns similar jobs using hybrid recommendation scoring.
 
-```
+```text
 GET /recommend/1?limit=5&same_category_only=true
 ```
 
@@ -240,10 +212,11 @@ GET /recommend/1?limit=5&same_category_only=true
 
 ### POST /rag/ask
 
-```
+Answers questions over indexed job descriptions.
+
+```json
 {
   "question": "Which backend jobs require FastAPI and PostgreSQL?",
-  "category": "Backend",
   "top_k": 3
 }
 ```
@@ -252,7 +225,13 @@ GET /recommend/1?limit=5&same_category_only=true
 
 ### GET /health/indexes
 
-- embedding / chunk index metadata  
+Returns embedding and chunk index metadata.
+
+---
+
+### GET /health/pipeline
+
+Returns recent pipeline run summaries.
 
 ---
 
@@ -262,11 +241,12 @@ GET /recommend/1?limit=5&same_category_only=true
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-
+python pipeline/create_tables.py
 uvicorn app.main:app --reload
 ```
 
 Docs:
+
 http://127.0.0.1:8000/docs
 
 ---
@@ -277,3 +257,11 @@ http://127.0.0.1:8000/docs
 docker compose up --build
 docker compose exec api python -m pipeline.rebuild_all
 ```
+
+---
+
+## Notes
+
+This project keeps the retrieval and recommendation layer lightweight and interview-friendly.
+
+The current vector artifacts are file-based. A natural next step is to extend the incremental pipeline further or move vector storage into PostgreSQL with pgvector or a dedicated vector store.
