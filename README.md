@@ -1,8 +1,8 @@
-# JobScope: AI-Powered Job Intelligence Platform
+# JobScope
 
-JobScope is a pipeline-oriented backend/data system for ingesting, processing, and serving job posting data.
+JobScope is a pipeline-oriented backend and data engineering project for ingesting, processing, indexing, and serving job posting data.
 
-It focuses on combining data engineering workflows with API-based serving, recommendation, and retrieval.
+It is built to show an end-to-end workflow across data ingestion, transformation, retrieval, recommendation, and API serving.
 
 ---
 
@@ -32,25 +32,28 @@ CSV ingestion → PostgreSQL → cleaning / skill extraction → embeddings → 
 
 ## Features
 
-- CSV ingestion with validation and upsert logic  
-- PostgreSQL-backed storage  
-- Job description cleaning  
-- Rule-based skill extraction (alias normalization)  
-- Job API with filtering, sorting, pagination  
-- Skill analytics  
-- Hybrid recommendation (embeddings + structured signals)  
-- Retrieval-based Q&A (RAG pipeline)  
+- CSV ingestion with validation, normalization, and URL-based upsert
+- PostgreSQL-backed storage
+- Cleaning and rule-based skill extraction
+- Hybrid recommendation using embeddings and structured metadata
+- Retrieval-based Q&A with chunking, semantic retrieval, reranking, and deduplication
+- Pipeline run tracking and health checks
+- Prefect-based pipeline orchestration
+- Docker-based local development
 
 ---
 
 ## Tech Stack
 
-- Python, FastAPI  
-- PostgreSQL, SQLAlchemy  
-- Pandas  
-- sentence-transformers  
-- FAISS  
-- Docker  
+- Python
+- FastAPI
+- PostgreSQL
+- SQLAlchemy
+- Pandas
+- sentence-transformers
+- FAISS
+- Prefect
+- Docker
 
 ---
 
@@ -91,16 +94,21 @@ jobscope/
 │       └── health.py
 │
 ├── pipeline/
-│   ├── create_tables.py
-│   ├── ingest_jobs.py
-│   ├── clean_jobs.py
-│   ├── extract_skills.py
-│   ├── process_jobs.py
-│   ├── build_embeddings.py
+│   ├── __init__.py
 │   ├── build_chunk_index.py
+│   ├── build_embeddings.py
+│   ├── clean_jobs.py
+│   ├── create_tables.py
 │   ├── evaluate_rag.py
+│   ├── extract_skills.py
+│   ├── flows.py
+│   ├── ingest_jobs.py
+│   ├── process_jobs.py
 │   ├── rebuild_all.py
-│   └── skill_dict.py
+│   ├── rebuild_utils.py
+│   ├── run_tracker.py
+│   ├── skill_dict.py
+│   └── state_utils.py
 │
 ├── rag/
 │   ├── chunking.py
@@ -140,65 +148,49 @@ jobscope/
 
 ### 1. Ingestion
 
-- CSV → PostgreSQL
-- required field validation  
-- URL-based upsert  
-- normalization (location / category / seniority)  
-- inserted / updated / skipped tracking  
+- reads `data/raw/jobs.csv`
+- validates required fields
+- normalizes selected fields
+- upserts into PostgreSQL by URL
 
----
+### 2. Processing
 
-### 2. Cleaning
+- cleans descriptions
+- extracts skills using a rule-based taxonomy and alias mapping
+- stores processed text for downstream use
 
-- description → cleaned_description  
-- used for analytics, recommendation, retrieval  
+### 3. Embeddings and Indexing
 
----
-
-### 3. Skill Extraction
-
-- rule-based taxonomy + alias handling  
-
-Examples:
-
-- postgres, postgresql → postgresql  
-- sklearn, scikit learn → scikit-learn  
-
-- stored in detected_skills  
-
----
+- builds job-level embeddings for recommendation
+- builds chunk-level embeddings and FAISS index for retrieval
+- stores generated artifacts in `data/processed/`
 
 ### 4. Recommendation
 
-- embeddings: all-MiniLM-L6-v2  
+Hybrid recommendation combines:
 
-Hybrid scoring:
-
-- embedding similarity  
-- skill overlap  
-- category match  
-- seniority match  
-
----
+- embedding similarity
+- skill overlap
+- category match
+- seniority match
 
 ### 5. Retrieval / RAG
 
-- sentence-aware chunking  
-- FAISS indexing  
+RAG flow includes:
 
-Includes:
+- sentence-aware chunking
+- semantic retrieval
+- keyword reranking
+- source deduplication
+- optional LLM synthesis with extractive fallback
 
-- semantic retrieval  
-- keyword-based reranking  
-- source deduplication  
-- optional LLM synthesis (fallback: extractive)  
+### 6. Operations
 
----
-
-### 6. Rebuild & Evaluation
-
-- pipeline/rebuild_all.py  
-- pipeline/evaluate_rag.py  
+- `pipeline_runs` stores pipeline execution metadata
+- `/health/indexes` returns artifact metadata
+- `/health/pipeline` returns recent pipeline run summaries
+- `pipeline/flows.py` defines the Prefect flow
+- `pipeline/rebuild_all.py` runs the pipeline
 
 ---
 
