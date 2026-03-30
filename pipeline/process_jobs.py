@@ -33,10 +33,19 @@ def process_single_job(job: Job) -> dict:
 
 
 def summarize_results(results: list[dict]) -> dict:
+    processed_jobs = len(results)
+    jobs_without_skills = sum(1 for r in results if r["skills_count"] == 0)
+    empty_cleaned_description = sum(1 for r in results if r["cleaned_empty"])
+
+    avg_skills_per_job = round(
+        sum(r["skills_count"] for r in results) / processed_jobs, 3
+    ) if processed_jobs else 0.0
+
     return {
-        "processed_jobs": len(results),
-        "jobs_without_skills": sum(1 for r in results if r["skills_count"] == 0),
-        "empty_cleaned_description": sum(1 for r in results if r["cleaned_empty"]),
+        "processed_jobs": processed_jobs,
+        "jobs_without_skills": jobs_without_skills,
+        "empty_cleaned_description": empty_cleaned_description,
+        "avg_skills_per_job": avg_skills_per_job,
     }
 
 
