@@ -1,10 +1,23 @@
 import json
 import os
 from datetime import datetime, timezone
-from fastapi import APIRouter
-from app.config import EMBEDDING_META_PATH, CHUNK_INDEX_META_PATH
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.config import CHUNK_INDEX_META_PATH, EMBEDDING_META_PATH
+from app.db import SessionLocal
+from app.models import PipelineRun
 
 router = APIRouter(prefix="/health", tags=["health"])
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def read_json_if_exists(path: str):
@@ -49,4 +62,35 @@ def health_indexes():
             "meta": chunk_meta,
             "status": compute_staleness(chunk_meta),
         },
+    }
+
+
+@router.get("/pipeline")
+def health_pipeline(db: Session = Depends(get_db)):
+    runs = (
+        db.query(PipelineRun)
+        .order_by(PipelineRun.started_at.desc())
+        .limit(10)
+        .all()
+    )
+
+    return {
+        "runs": [
+            {
+                "id": run.id,
+                "pipeline_name": run.pipeline_name,
+                "status": run.status,
+                "source_name": run.source_name,
+                "input_rows": run.input_rows,
+                "output_rows": run.output_rows,
+                "inserted_rows": run.inserted_rows,
+                "updated_rows": run.updated_rows,
+                "skipped_rows": run.skipped_rows,
+                "metrics": run.metrics,
+                "error_message": run.error_message,
+                "started_at": run.started_at.isoformat() if run.started_at else None,
+                "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            }
+            for run in runs
+        ]
     }
