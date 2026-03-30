@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.schemas import JobResponse
-from app.crud import get_jobs
+from app.services.jobs_service import list_jobs
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -21,7 +21,7 @@ def read_jobs(
     limit: int = Query(default=20, le=100),
     db: Session = Depends(get_db),
 ):
-    return get_jobs(
+    return list_jobs(
         db=db,
         keyword=keyword,
         location=location,

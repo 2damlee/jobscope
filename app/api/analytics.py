@@ -1,9 +1,14 @@
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.crud import get_top_skills
 from app.schemas import SkillCountResponse
+from app.services.analytics_service import list_top_skills
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -15,7 +20,7 @@ def read_top_skills(
     limit: int = Query(default=10, le=50),
     db: Session = Depends(get_db),
 ):
-    return get_top_skills(
+    return list_top_skills(
         db=db,
         category=category,
         seniority=seniority,
