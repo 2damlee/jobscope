@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.crud import get_jobs
 from app.schemas import JobResponse
+from app.crud import get_jobs
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 

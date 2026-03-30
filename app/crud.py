@@ -1,6 +1,8 @@
-from sqlalchemy.orm import Session
-from app.models import Job
 from collections import Counter
+
+from sqlalchemy.orm import Session
+
+from app.models import Job
 
 
 def get_jobs(
@@ -13,7 +15,9 @@ def get_jobs(
     query = db.query(Job)
 
     if keyword:
-        query = query.filter(Job.title.ilike(f"%{keyword}%") | Job.description.ilike(f"%{keyword}%"))
+        query = query.filter(
+            Job.title.ilike(f"%{keyword}%") | Job.description.ilike(f"%{keyword}%")
+        )
 
     if location:
         query = query.filter(Job.location.ilike(f"%{location}%"))
@@ -22,6 +26,7 @@ def get_jobs(
         query = query.filter(Job.category.ilike(f"%{category}%"))
 
     return query.limit(limit).all()
+
 
 def get_top_skills(
     db: Session,
@@ -40,11 +45,9 @@ def get_top_skills(
     jobs = query.all()
 
     counter = Counter()
-
     for job in jobs:
         if not job.detected_skills:
             continue
-
         skills = [s.strip() for s in job.detected_skills.split(",") if s.strip()]
         counter.update(skills)
 
