@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import text
+from app.db import engine
 
 from app.config import CHUNK_INDEX_META_PATH, EMBEDDING_META_PATH
 from app.db import SessionLocal
@@ -94,3 +96,16 @@ def health_pipeline(db: Session = Depends(get_db)):
             for run in runs
         ]
     }
+    
+@router.get("/db")
+def health_db():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return {"status": "ok", "database": "reachable"}
+    except Exception as exc:
+        return {
+            "status": "error",
+            "database": "unreachable",
+            "detail": str(exc),
+        }
