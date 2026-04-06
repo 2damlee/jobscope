@@ -8,12 +8,20 @@ def list_jobs(
     keyword: str | None = None,
     location: str | None = None,
     category: str | None = None,
-    limit: int = 20,
+    seniority: str | None = None,
+    page: int = 1,
+    size: int = 20,
+    sort_by: str = "date_posted",
+    sort_order: str = "desc",
 ):
     return get_jobs(
         db=db,
         keyword=keyword,
         location=location,
         category=category,
-        limit=limit,
+        seniority=seniority,
+        page=page,
+        size=size,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
