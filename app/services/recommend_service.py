@@ -1,27 +1,27 @@
 import json
-import os
 
 import numpy as np
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.config import EMBEDDING_PATH, JOB_IDS_PATH
 from app.models import Job
 from app.recommendation import compute_hybrid_score, parse_skills
 
-EMBEDDING_PATH = "data/processed/job_embeddings.npy"
-JOB_IDS_PATH = "data/processed/job_ids.json"
-
 
 def load_embeddings():
-    if not os.path.exists(EMBEDDING_PATH) or not os.path.exists(JOB_IDS_PATH):
+    if not EMBEDDING_PATH.exists() or not JOB_IDS_PATH.exists():
         raise HTTPException(
             status_code=500,
-            detail="Embedding files not found. Run build_embeddings first.",
+            detail=(
+                "Embedding files not found. "
+                f"expected={EMBEDDING_PATH} and {JOB_IDS_PATH}. "
+                "Run build_embeddings first."
+            ),
         )
 
     embeddings = np.load(EMBEDDING_PATH)
-
-    with open(JOB_IDS_PATH, "r", encoding="utf-8") as f:
+    with JOB_IDS_PATH.open("r", encoding="utf-8") as f:
         job_ids = json.load(f)
 
     if len(embeddings) == 0 or len(job_ids) == 0:
@@ -51,17 +51,24 @@ def list_recommendations(
     target_idx = job_ids.index(job_id)
     target_vec = embeddings[target_idx]
     target_skills = parse_skills(target_job.detected_skills)
+
     embedding_scores = embeddings @ target_vec
+
+    candidate_jobs = (
+        db.query(Job)
+        .filter(Job.id.in_(job_ids))
+        .all()
+    )
+    candidate_jobs_by_id = {job.id: job for job in candidate_jobs}
 
     ranked = []
 
     for idx, embedding_score in enumerate(embedding_scores):
         candidate_id = job_ids[idx]
-
         if candidate_id == job_id:
             continue
 
-        candidate_job = db.query(Job).filter(Job.id == candidate_id).first()
+        candidate_job = candidate_jobs_by_id.get(candidate_id)
         if not candidate_job or not candidate_job.title:
             continue
 
@@ -72,7 +79,7 @@ def list_recommendations(
             continue
 
         candidate_skills = parse_skills(candidate_job.detected_skills)
-        shared_skills = sorted(list(target_skills & candidate_skills))
+        shared_skills = sorted(target_skills & candidate_skills)
 
         score_parts = compute_hybrid_score(
             embedding_score=float(embedding_score),

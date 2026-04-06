@@ -9,42 +9,49 @@ from pipeline.process_jobs import process_jobs
 @task(name="ingest_jobs", retries=2, retry_delay_seconds=5, log_prints=True)
 def ingest_task(full_rebuild: bool = False):
     print(f"[stage] ingest_jobs start (full_rebuild={full_rebuild})")
-    ingest_jobs(full_rebuild=full_rebuild)
-    print("[stage] ingest_jobs done")
+    result = ingest_jobs(full_rebuild=full_rebuild)
+    print(f"[stage] ingest_jobs done: {result}")
+    return result
 
 
 @task(name="process_jobs", retries=2, retry_delay_seconds=5, log_prints=True)
 def process_task():
     print("[stage] process_jobs start")
-    process_jobs()
-    print("[stage] process_jobs done")
+    result = process_jobs()
+    print(f"[stage] process_jobs done: {result}")
+    return result
 
 
-@task(name="build_embeddings", retries=1, retry_delay_seconds=5, log_prints=True)
-def embeddings_task():
+@task(name="build_embeddings", retries=2, retry_delay_seconds=5, log_prints=True)
+def embedding_task():
     print("[stage] build_embeddings start")
-    build_embeddings()
-    print("[stage] build_embeddings done")
+    result = build_embeddings()
+    print(f"[stage] build_embeddings done: {result}")
+    return result
 
 
-@task(name="build_chunk_index", retries=1, retry_delay_seconds=5, log_prints=True)
-def chunk_index_task():
+@task(name="build_chunk_index", retries=2, retry_delay_seconds=5, log_prints=True)
+def chunk_task():
     print("[stage] build_chunk_index start")
-    build_chunk_index()
-    print("[stage] build_chunk_index done")
+    result = build_chunk_index()
+    print(f"[stage] build_chunk_index done: {result}")
+    return result
 
 
 @flow(name="jobscope_pipeline", log_prints=True)
 def run_pipeline(full_rebuild: bool = False):
-    print(f"[flow] jobscope_pipeline start (full_rebuild={full_rebuild})")
+    ingest_summary = ingest_task(full_rebuild=full_rebuild)
+    process_summary = process_task()
+    embedding_summary = embedding_task()
+    chunk_summary = chunk_task()
 
-    ingest_task(full_rebuild=full_rebuild)
-    process_task()
-    embeddings_task()
-    chunk_index_task()
+    pipeline_summary = {
+        "full_rebuild": full_rebuild,
+        "ingest": ingest_summary,
+        "process": process_summary,
+        "embeddings": embedding_summary,
+        "chunk_index": chunk_summary,
+    }
 
-    print("[flow] jobscope_pipeline completed")
-
-
-if __name__ == "__main__":
-    run_pipeline()
+    print(f"[pipeline] summary: {pipeline_summary}")
+    return pipeline_summary

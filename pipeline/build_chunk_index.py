@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
-from pathlib import Path
 
+from app.config import CHUNK_INDEX_META_PATH, CHUNK_INDEX_PATH, CHUNK_META_PATH, ensure_data_dirs
 from app.db import SessionLocal
 from app.models import Job
 from pipeline.rebuild_utils import should_rebuild_from_dirty_count
@@ -10,21 +10,18 @@ from rag.chunking import chunk_text
 from rag.embeddings import embed_texts
 from rag.vector_store import build_faiss_index, save_faiss_index
 
-FAISS_PATH = Path("data/processed/job_chunks.faiss")
-CHUNK_RECORDS_PATH = Path("data/processed/job_chunks.json")
-CHUNK_INDEX_META_PATH = Path("data/processed/chunk_index_meta.json")
 
-
-def should_rebuild_chunk_index(db) -> bool:
+def should_rebuild_chunk_index(db) -> tuple[bool, int]:
     dirty_count = db.query(Job).filter(Job.chunked_at.is_(None)).count()
-    return should_rebuild_from_dirty_count(
+    should_rebuild = should_rebuild_from_dirty_count(
         dirty_count=dirty_count,
         artifact_paths=[
-            str(FAISS_PATH),
-            str(CHUNK_RECORDS_PATH),
+            str(CHUNK_INDEX_PATH),
+            str(CHUNK_META_PATH),
             str(CHUNK_INDEX_META_PATH),
         ],
     )
+    return should_rebuild, dirty_count
 
 
 def collect_chunk_records(jobs):
@@ -37,7 +34,6 @@ def collect_chunk_records(jobs):
             continue
 
         chunks = chunk_text(text)
-
         for i, chunk in enumerate(chunks):
             chunk_records.append(
                 {
@@ -63,94 +59,80 @@ def build_chunk_index():
     run = start_run(db, pipeline_name="build_chunk_index")
 
     try:
-        if not should_rebuild_chunk_index(db):
-            finish_run(
-                db,
-                run,
-                status="success",
-                output_rows=0,
-                metrics={
-                    "skipped_rebuild": True,
-                    "reason": "no_dirty_jobs",
-                },
-            )
-            print("Skipped chunk index rebuild: no dirty jobs.")
-            return
+        should_rebuild, dirty_count = should_rebuild_chunk_index(db)
 
-        CHUNK_RECORDS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if not should_rebuild:
+            summary = {
+                "skipped_rebuild": True,
+                "reason": "no_dirty_jobs",
+                "dirty_jobs": dirty_count,
+                "artifact_paths": [
+                    str(CHUNK_INDEX_PATH),
+                    str(CHUNK_META_PATH),
+                    str(CHUNK_INDEX_META_PATH),
+                ],
+            }
+            finish_run(db, run, status="success", output_rows=0, metrics=summary)
+            return summary
+
+        ensure_data_dirs()
 
         jobs = db.query(Job).all()
         chunk_records, chunk_texts = collect_chunk_records(jobs)
 
-        if not chunk_records:
-            finish_run(
-                db,
-                run,
-                status="success",
-                output_rows=0,
-                metrics={
-                    "skipped_rebuild": True,
-                    "reason": "no_chunkable_jobs",
-                },
-            )
-            print("Skipped chunk index rebuild: no chunkable jobs.")
-            return
+        embeddings = embed_texts(chunk_texts)
+        index = build_faiss_index(embeddings)
+        save_faiss_index(index, str(CHUNK_INDEX_PATH))
 
-        vectors = embed_texts(chunk_texts)
-        index = build_faiss_index(vectors)
-        save_faiss_index(index)
-
-        with CHUNK_RECORDS_PATH.open("w", encoding="utf-8") as f:
+        with CHUNK_META_PATH.open("w", encoding="utf-8") as f:
             json.dump(chunk_records, f, ensure_ascii=False, indent=2)
 
-        generated_at = datetime.utcnow()
-        avg_chunk_length = round(
-            sum(item["chunk_length"] for item in chunk_records) / len(chunk_records), 2
-        )
-
-        meta = {
-            "generated_at": generated_at.isoformat(),
-            "pipeline_run_id": run.id,
-            "chunk_count": len(chunk_records),
-            "artifact": "job_chunks_index",
-            "avg_chunk_length": avg_chunk_length,
-        }
         with CHUNK_INDEX_META_PATH.open("w", encoding="utf-8") as f:
-            json.dump(meta, f, indent=2)
+            json.dump(
+                {
+                    "generated_at": datetime.utcnow().isoformat(),
+                    "chunk_count": len(chunk_records),
+                    "job_count": len({r["job_id"] for r in chunk_records}),
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
 
-        chunked_job_ids = sorted({record["job_id"] for record in chunk_records})
-        db.query(Job).filter(Job.id.in_(chunked_job_ids)).update(
-            {"chunked_at": generated_at},
-            synchronize_session=False,
-        )
-        db.commit()
+        now = datetime.utcnow()
+        touched_job_ids = sorted({r["job_id"] for r in chunk_records})
+        if touched_job_ids:
+            db.query(Job).filter(Job.id.in_(touched_job_ids)).update(
+                {"chunked_at": now},
+                synchronize_session=False,
+            )
+            db.commit()
+
+        summary = {
+            "skipped_rebuild": False,
+            "dirty_jobs": dirty_count,
+            "chunk_count": len(chunk_records),
+            "job_count": len(touched_job_ids),
+            "artifact_paths": [
+                str(CHUNK_INDEX_PATH),
+                str(CHUNK_META_PATH),
+                str(CHUNK_INDEX_META_PATH),
+            ],
+        }
 
         finish_run(
             db,
             run,
             status="success",
             output_rows=len(chunk_records),
-            metrics={
-                "chunk_count": len(chunk_records),
-                "job_count": len(chunked_job_ids),
-                "avg_chunk_length": avg_chunk_length,
-                "skipped_rebuild": False,
-            },
+            updated_rows=len(touched_job_ids),
+            metrics=summary,
         )
-        print(f"Saved {len(chunk_records)} chunks.")
+        return summary
 
     except Exception as e:
         db.rollback()
-        finish_run(
-            db,
-            run,
-            status="failed",
-            error_message=str(e),
-        )
+        finish_run(db, run, status="failed", output_rows=0, error_message=str(e))
         raise
     finally:
         db.close()
-
-
-if __name__ == "__main__":
-    build_chunk_index()

@@ -1,11 +1,8 @@
-import sys
 from datetime import datetime
-from pathlib import Path
 
 import pandas as pd
 
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-
+from app.config import CSV_PATH
 from app.db import SessionLocal
 from app.models import Job
 from pipeline.run_tracker import finish_run, start_run
@@ -15,7 +12,7 @@ CSV_PATH = "data/raw/jobs.csv"
 MIN_DESCRIPTION_LENGTH = 30
 
 
-def load_csv(path: str) -> pd.DataFrame:
+def load_csv(path) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
@@ -181,84 +178,78 @@ def ingest_jobs(full_rebuild: bool = False):
     run = start_run(
         db,
         pipeline_name="ingest_jobs",
-        source_name=CSV_PATH,
+        source_name=str(CSV_PATH),
         input_rows=len(df),
     )
 
     try:
+        if full_rebuild:
+            mark_all_jobs_pending(db)
+
         for row in prepared_rows:
             existing_job = db.query(Job).filter(Job.url == row["url"]).first()
 
             if existing_job:
-                if not has_source_changed(existing_job.source_hash, row["source_hash"]):
+                if has_source_changed(existing_job.source_hash, row["source_hash"]):
+                    existing_job.title = row["title"]
+                    existing_job.company = row["company"]
+                    existing_job.location = row["location"]
+                    existing_job.category = row["category"]
+                    existing_job.seniority = row["seniority"]
+                    existing_job.description = row["description"]
+                    existing_job.date_posted = row["date_posted"]
+                    existing_job.source_hash = row["source_hash"]
+
+                    reset_downstream_state(existing_job)
+                    updated += 1
+                    changed += 1
+                else:
                     unchanged += 1
-                    continue
-
-                existing_job.title = row["title"]
-                existing_job.company = row["company"]
-                existing_job.location = row["location"]
-                existing_job.category = row["category"]
-                existing_job.seniority = row["seniority"]
-                existing_job.description = row["description"]
-                existing_job.date_posted = row["date_posted"]
-                existing_job.source_hash = row["source_hash"]
-                existing_job.ingested_at = datetime.utcnow()
-                reset_downstream_state(existing_job)
-
-                updated += 1
-                changed += 1
-
             else:
-                job = Job(
-                    title=row["title"],
-                    company=row["company"],
-                    location=row["location"],
-                    category=row["category"],
-                    seniority=row["seniority"],
-                    description=row["description"],
-                    cleaned_description=None,
-                    detected_skills=None,
-                    date_posted=row["date_posted"],
-                    url=row["url"],
-                    source_hash=row["source_hash"],
-                    processing_status="pending",
+                db.add(
+                    Job(
+                        title=row["title"],
+                        company=row["company"],
+                        location=row["location"],
+                        category=row["category"],
+                        seniority=row["seniority"],
+                        description=row["description"],
+                        date_posted=row["date_posted"],
+                        url=row["url"],
+                        source_hash=row["source_hash"],
+                        processing_status="pending",
+                        ingested_at=datetime.utcnow(),
+                    )
                 )
-                db.add(job)
                 inserted += 1
                 changed += 1
 
-        if full_rebuild:
-            mark_all_jobs_pending(db)
-
         db.commit()
+
+        summary = {
+            "input_rows": len(df),
+            "prepared_rows": len(prepared_rows),
+            "inserted_rows": inserted,
+            "updated_rows": updated,
+            "unchanged_rows": unchanged,
+            "changed_rows": changed,
+            "skipped_rows": skipped,
+            "duplicate_urls_in_file": duplicate_urls_in_file,
+            "skip_reasons": skip_reasons,
+            "full_rebuild": full_rebuild,
+        }
 
         finish_run(
             db,
             run,
             status="success",
-            output_rows=inserted + updated,
+            output_rows=len(prepared_rows),
             inserted_rows=inserted,
             updated_rows=updated,
             skipped_rows=skipped,
-            metrics={
-                "skip_reasons": skip_reasons,
-                "changed_rows": changed,
-                "unchanged_rows": unchanged,
-                "duplicate_urls_in_file": duplicate_urls_in_file,
-                "deduped_input_rows": len(prepared_rows),
-                "full_rebuild": full_rebuild,
-            },
+            metrics=summary,
         )
-
-        print(f"Inserted: {inserted}")
-        print(f"Updated: {updated}")
-        print(f"Unchanged: {unchanged}")
-        print(f"Changed: {changed}")
-        print(f"Skipped: {skipped}")
-        print(f"Duplicate URLs in file: {duplicate_urls_in_file}")
-        print(f"Skip reasons: {skip_reasons}")
-        if full_rebuild:
-            print("Marked all jobs as pending for full rebuild.")
+        return summary
 
     except Exception as e:
         db.rollback()
@@ -266,18 +257,17 @@ def ingest_jobs(full_rebuild: bool = False):
             db,
             run,
             status="failed",
+            output_rows=0,
+            inserted_rows=inserted,
+            updated_rows=updated,
             skipped_rows=skipped,
             metrics={
-                "skip_reasons": skip_reasons,
-                "changed_rows": changed,
-                "unchanged_rows": unchanged,
-                "duplicate_urls_in_file": duplicate_urls_in_file,
-                "deduped_input_rows": len(prepared_rows),
                 "full_rebuild": full_rebuild,
+                "duplicate_urls_in_file": duplicate_urls_in_file,
+                "skip_reasons": skip_reasons,
             },
             error_message=str(e),
         )
-        print("Ingest failed:", e)
         raise
     finally:
         db.close()
