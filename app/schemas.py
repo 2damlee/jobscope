@@ -1,4 +1,5 @@
 from datetime import date
+
 from pydantic import BaseModel, Field
 
 
@@ -17,6 +18,13 @@ class JobResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class JobListResponse(BaseModel):
+    items: list[JobResponse]
+    page: int
+    size: int
+    total: int
 
 
 class SkillCountResponse(BaseModel):
@@ -59,25 +67,3 @@ class RagAskResponse(BaseModel):
     generation_mode: str
     sources: list[RagSource]
     matched_chunks: list[str]
-
-
-class JobResponse(BaseModel):
-    id: int
-    title: str
-    company: str | None = None
-    location: str | None = None
-    category: str | None = None
-    seniority: str | None = None
-    description: str | None = None
-    date_posted: str | None = None
-    url: str | None = None
-
-    class Config:
-        from_attributes = True
-
-
-class JobListResponse(BaseModel):
-    items: list[JobResponse]
-    page: int
-    size: int
-    total: int
