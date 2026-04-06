@@ -51,14 +51,9 @@ def list_recommendations(
     target_idx = job_ids.index(job_id)
     target_vec = embeddings[target_idx]
     target_skills = parse_skills(target_job.detected_skills)
-
     embedding_scores = embeddings @ target_vec
 
-    candidate_jobs = (
-        db.query(Job)
-        .filter(Job.id.in_(job_ids))
-        .all()
-    )
+    candidate_jobs = db.query(Job).filter(Job.id.in_(job_ids)).all()
     candidate_jobs_by_id = {job.id: job for job in candidate_jobs}
 
     ranked = []
@@ -79,7 +74,7 @@ def list_recommendations(
             continue
 
         candidate_skills = parse_skills(candidate_job.detected_skills)
-        shared_skills = sorted(target_skills & candidate_skills)
+        shared_skills = sorted(list(target_skills & candidate_skills))
 
         score_parts = compute_hybrid_score(
             embedding_score=float(embedding_score),
