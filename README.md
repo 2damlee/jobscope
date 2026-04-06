@@ -196,42 +196,80 @@ RAG flow includes:
 
 ## API
 
-### GET /jobs
+### `GET /jobs`
 
-Supports:
+List jobs with optional filters, pagination, and sorting.
 
-- keyword, location, category, seniority  
-- page, size  
-- sort_by, sort_order  
+Query parameters:
 
+- `keyword`: match against title or description
+- `location`: filter by location
+- `category`: filter by category
+- `seniority`: filter by seniority
+- `page`: page number, default `1`
+- `size`: page size, default `20`, max `100`
+- `sort_by`: one of `date_posted`, `title`, `company`, `location`, `category`, `seniority`
+- `sort_order`: `asc` or `desc`
+
+Response shape:
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "title": "Backend Engineer",
+      "company": "Example",
+      "location": "Berlin",
+      "category": "Backend",
+      "seniority": "Senior",
+      "description": "...",
+      "cleaned_description": "...",
+      "detected_skills": "Python,FastAPI,PostgreSQL",
+      "date_posted": "2024-03-01",
+      "url": "https://example.com/job/1"
+    }
+  ],
+  "page": 1,
+  "size": 20,
+  "total": 120
+}
 ```
-GET /jobs?location=Berlin&category=Backend&seniority=Junior&page=1&size=10&sort_by=date_posted&sort_order=desc
-```
-
 ---
 
 ### GET /analytics/skills
 
-```
-GET /analytics/skills?location=Berlin&category=Backend&seniority=Junior
-```
+Return top detected skills.
+
+Query parameters: </b>
+`category` `seniority` `limit`
 
 ---
 
 ### GET /recommend/{job_id}
 
-- embedding score  
-- skill overlap  
-- metadata match  
+Return similar jobs using hybrid scoring based on:
 
-```
-GET /recommend/1?limit=5&same_category_only=true
-```
+- embedding similarity
+- skill overlap  
+- category match 
+- seniority match
+
+
+### GET /health/indexes
+
+Check whether embedding and chunk artifacts exist.
+
+### GET /health/pipeline
+
+Return whether embedding and chunk artifacts exist.
 
 ---
 
 ### POST /rag/ask
+Available only when `ENABLE_RAG=true`
 
+Request body:
 ```
 {
   "question": "Which backend jobs require FastAPI and PostgreSQL?",
@@ -240,11 +278,6 @@ GET /recommend/1?limit=5&same_category_only=true
 }
 ```
 
----
-
-### GET /health/indexes
-
-- embedding / chunk index metadata  
 
 ---
 
