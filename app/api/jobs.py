@@ -1,30 +1,35 @@
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.crud import get_jobs
 from app.db import get_db
-from app.schemas import JobResponse
-from app.services.jobs_service import list_jobs
+from app.schemas import JobListResponse
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
-@router.get("", response_model=list[JobResponse])
-def read_jobs(
-    keyword: str | None = Query(default=None),
-    location: str | None = Query(default=None),
-    category: str | None = Query(default=None),
-    limit: int = Query(default=20, le=100),
+@router.get("", response_model=JobListResponse)
+def list_jobs(
+    keyword: str | None = None,
+    location: str | None = None,
+    category: str | None = None,
+    seniority: str | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    sort_by: str = Query("date_posted"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
 ):
-    return list_jobs(
+    result = get_jobs(
         db=db,
         keyword=keyword,
         location=location,
         category=category,
-        limit=limit,
+        seniority=seniority,
+        page=page,
+        size=size,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
+
+    return result

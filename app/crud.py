@@ -1,5 +1,4 @@
-from collections import Counter
-
+from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
 
 from app.models import Job
@@ -10,14 +9,16 @@ def get_jobs(
     keyword: str | None = None,
     location: str | None = None,
     category: str | None = None,
-    limit: int = 20,
+    seniority: str | None = None,
+    page: int = 1,
+    size: int = 20,
+    sort_by: str = "date_posted",
+    sort_order: str = "desc",
 ):
     query = db.query(Job)
 
     if keyword:
-        query = query.filter(
-            Job.title.ilike(f"%{keyword}%") | Job.description.ilike(f"%{keyword}%")
-        )
+        query = query.filter(Job.title.ilike(f"%{keyword}%"))
 
     if location:
         query = query.filter(Job.location.ilike(f"%{location}%"))
@@ -25,30 +26,33 @@ def get_jobs(
     if category:
         query = query.filter(Job.category.ilike(f"%{category}%"))
 
-    return query.limit(limit).all()
-
-
-def get_top_skills(
-    db: Session,
-    category: str | None = None,
-    seniority: str | None = None,
-    limit: int = 10,
-):
-    query = db.query(Job)
-
-    if category:
-        query = query.filter(Job.category.ilike(f"%{category}%"))
-
     if seniority:
         query = query.filter(Job.seniority.ilike(f"%{seniority}%"))
 
-    jobs = query.all()
+    allowed_sort_fields = {
+        "date_posted": Job.date_posted,
+        "title": Job.title,
+        "company": Job.company,
+        "location": Job.location,
+        "category": Job.category,
+        "seniority": Job.seniority,
+    }
 
-    counter = Counter()
-    for job in jobs:
-        if not job.detected_skills:
-            continue
-        skills = [s.strip() for s in job.detected_skills.split(",") if s.strip()]
-        counter.update(skills)
+    sort_column = allowed_sort_fields.get(sort_by, Job.date_posted)
+    order_fn = desc if sort_order.lower() == "desc" else asc
 
-    return [{"skill": skill, "count": count} for skill, count in counter.most_common(limit)]
+    total = query.count()
+
+    items = (
+        query.order_by(order_fn(sort_column))
+        .offset((page - 1) * size)
+        .limit(size)
+        .all()
+    )
+
+    return {
+        "items": items,
+        "page": page,
+        "size": size,
+        "total": total,
+    }
