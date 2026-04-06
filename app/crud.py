@@ -1,6 +1,6 @@
 from collections import Counter
 
-from sqlalchemy import asc, desc
+from sqlalchemy import asc, desc, or_
 from sqlalchemy.orm import Session
 
 from app.models import Job
@@ -21,19 +21,21 @@ def get_jobs(
 
     if keyword:
         keyword_term = f"%{keyword.strip()}%"
-        query = query.filter(Job.title.ilike(keyword_term))
+        query = query.filter(
+            or_(
+                Job.title.ilike(keyword_term),
+                Job.description.ilike(keyword_term),
+            )
+        )
 
     if location:
-        location_term = f"%{location.strip()}%"
-        query = query.filter(Job.location.ilike(location_term))
+        query = query.filter(Job.location.ilike(f"%{location.strip()}%"))
 
     if category:
-        category_term = f"%{category.strip()}%"
-        query = query.filter(Job.category.ilike(category_term))
+        query = query.filter(Job.category.ilike(f"%{category.strip()}%"))
 
     if seniority:
-        seniority_term = f"%{seniority.strip()}%"
-        query = query.filter(Job.seniority.ilike(seniority_term))
+        query = query.filter(Job.seniority.ilike(f"%{seniority.strip()}%"))
 
     allowed_sort_fields = {
         "date_posted": Job.date_posted,
@@ -73,17 +75,14 @@ def get_top_skills(
     query = db.query(Job)
 
     if category:
-        category_term = f"%{category.strip()}%"
-        query = query.filter(Job.category.ilike(category_term))
+        query = query.filter(Job.category.ilike(f"%{category.strip()}%"))
 
     if seniority:
-        seniority_term = f"%{seniority.strip()}%"
-        query = query.filter(Job.seniority.ilike(seniority_term))
+        query = query.filter(Job.seniority.ilike(f"%{seniority.strip()}%"))
 
     jobs = query.all()
 
     counter = Counter()
-
     for job in jobs:
         if not job.detected_skills:
             continue
