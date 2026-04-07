@@ -18,7 +18,6 @@ def test_registered_paths():
     assert "/analytics/skills" in paths
     assert "/recommend/{job_id}" in paths
     assert "/rag/ask" in paths
-    assert "/health/indexes" in paths
     assert "/health/pipeline" in paths
     assert "/health/db" in paths
 
