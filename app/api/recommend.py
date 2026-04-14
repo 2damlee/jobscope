@@ -9,9 +9,9 @@ router = APIRouter(prefix="/recommend", tags=["recommend"])
 
 
 @router.get("/{job_id}", response_model=list[RecommendedJobResponse])
-def read_recommendations(
+def recommend_jobs(
     job_id: int,
-    limit: int = Query(default=5, ge=1, le=20),
+    limit: int = Query(default=5, le=20),
     same_category_only: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
