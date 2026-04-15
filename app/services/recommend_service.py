@@ -12,7 +12,7 @@ from app.recommendation import compute_hybrid_score, parse_skills
 def load_embeddings():
     if not EMBEDDING_PATH.exists() or not JOB_IDS_PATH.exists():
         raise HTTPException(
-            status_code=500,
+            status_code=503,
             detail=(
                 "Embedding files not found. "
                 f"expected={EMBEDDING_PATH} and {JOB_IDS_PATH}. "
@@ -21,14 +21,15 @@ def load_embeddings():
         )
 
     embeddings = np.load(EMBEDDING_PATH)
+
     with JOB_IDS_PATH.open("r", encoding="utf-8") as f:
         job_ids = json.load(f)
 
     if len(embeddings) == 0 or len(job_ids) == 0:
-        raise HTTPException(status_code=500, detail="Embedding data is empty.")
+        raise HTTPException(status_code=503, detail="Embedding data is empty.")
 
     if len(embeddings) != len(job_ids):
-        raise HTTPException(status_code=500, detail="Embedding data is inconsistent.")
+        raise HTTPException(status_code=503, detail="Embedding data is inconsistent.")
 
     return embeddings, job_ids
 
@@ -51,8 +52,8 @@ def list_recommendations(
     target_idx = job_ids.index(job_id)
     target_vec = embeddings[target_idx]
     target_skills = parse_skills(target_job.detected_skills)
-    embedding_scores = embeddings @ target_vec
 
+    embedding_scores = embeddings @ target_vec
     candidate_jobs = db.query(Job).filter(Job.id.in_(job_ids)).all()
     candidate_jobs_by_id = {job.id: job for job in candidate_jobs}
 
@@ -60,6 +61,7 @@ def list_recommendations(
 
     for idx, embedding_score in enumerate(embedding_scores):
         candidate_id = job_ids[idx]
+
         if candidate_id == job_id:
             continue
 
@@ -68,7 +70,9 @@ def list_recommendations(
             continue
 
         same_category = bool((target_job.category or "") == (candidate_job.category or ""))
-        same_seniority = bool((target_job.seniority or "") == (candidate_job.seniority or ""))
+        same_seniority = bool(
+            (target_job.seniority or "") == (candidate_job.seniority or "")
+        )
 
         if same_category_only and not same_category:
             continue
