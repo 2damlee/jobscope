@@ -65,7 +65,6 @@ def validate_artifacts():
 @app.get("/")
 def read_root():
     status = artifact_status()
-
     return {
         "message": "JobScope API is running",
         "status": "ok",
