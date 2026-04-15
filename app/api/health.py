@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import CHUNK_INDEX_META_PATH, EMBEDDING_META_PATH
 from app.db import SessionLocal, engine
+from app.main import artifact_status
 from app.models import PipelineRun
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -52,7 +53,6 @@ def compute_staleness(meta: dict | None):
 
 @router.get("/ready")
 def health_ready():
-    from app.main import artifact_status
     artifacts = artifact_status()
 
     db_ok = True
@@ -73,7 +73,10 @@ def health_ready():
     if ready:
         return payload
 
-    return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=payload)
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content=payload,
+    )
 
 
 @router.get("/indexes")
