@@ -26,10 +26,10 @@ def load_embeddings():
         job_ids = json.load(f)
 
     if len(embeddings) == 0 or len(job_ids) == 0:
-        raise HTTPException(status_code=503, detail="Embedding data is empty.")
+        raise HTTPException(status_code=500, detail="Embedding data is empty.")
 
     if len(embeddings) != len(job_ids):
-        raise HTTPException(status_code=503, detail="Embedding data is inconsistent.")
+        raise HTTPException(status_code=500, detail="Embedding data is inconsistent.")
 
     return embeddings, job_ids
 

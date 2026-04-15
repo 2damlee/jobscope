@@ -24,7 +24,6 @@ def get_db():
 def read_json_if_exists(path):
     if not path.exists():
         return None
-
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -53,6 +52,7 @@ def compute_staleness(meta: dict | None):
 @router.get("/ready")
 def health_ready():
     from app.main import artifact_status
+
     artifacts = artifact_status()
 
     db_ok = True
@@ -63,7 +63,6 @@ def health_ready():
         db_ok = False
 
     ready = db_ok and artifacts["ready"]
-
     payload = {
         "status": "ready" if ready else "degraded",
         "database": "reachable" if db_ok else "unreachable",
@@ -73,7 +72,10 @@ def health_ready():
     if ready:
         return payload
 
-    return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=payload)
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content=payload,
+    )
 
 
 @router.get("/indexes")
@@ -129,7 +131,6 @@ def health_db():
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
-
         return {"status": "ok", "database": "reachable"}
     except Exception:
         return JSONResponse(
