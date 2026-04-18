@@ -1,4 +1,8 @@
-from tests.conftest import seed_jobs, write_embedding_artifacts
+from tests.conftest import (
+    load_recommendation_cache_into_app,
+    seed_jobs,
+    write_embedding_artifacts,
+)
 
 
 def test_health_ready_returns_503_when_artifacts_are_missing(integration_env):
@@ -26,7 +30,7 @@ def test_recommend_returns_503_when_embedding_artifacts_are_missing(integration_
     assert response.status_code == 503
     data = response.json()
     assert "detail" in data
-    assert "Embedding" in data["detail"]
+    assert "Recommendation artifacts are not loaded" in data["detail"]
 
 
 def test_recommend_returns_ranked_results_when_artifacts_exist(integration_env):
@@ -36,6 +40,7 @@ def test_recommend_returns_ranked_results_when_artifacts_exist(integration_env):
 
     seed_jobs(session_factory)
     write_embedding_artifacts(paths)
+    load_recommendation_cache_into_app(paths)
 
     response = client.get("/recommend/1?limit=2")
 
