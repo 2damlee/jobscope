@@ -3,9 +3,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from fastapi.testclient import TestClient
 
 from app.db import get_db
 from app.main import app
@@ -38,10 +38,9 @@ def integration_env(tmp_path, monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    # Import here so monkeypatch applies to module-level globals already loaded by app
     import app.api.health as health_module
-    import app.services.recommend_service as recommend_service
     import app.main as main_module
+    import app.services.recommend_service as recommend_service
 
     embedding_path = tmp_path / "job_embeddings.npy"
     job_ids_path = tmp_path / "job_ids.json"
@@ -56,7 +55,6 @@ def integration_env(tmp_path, monkeypatch):
     monkeypatch.setattr(recommend_service, "EMBEDDING_PATH", embedding_path)
     monkeypatch.setattr(recommend_service, "JOB_IDS_PATH", job_ids_path)
 
-    # Monkeypatch main.ARTIFACT_PATHS if it exists, to ensure all components reference the same test paths
     if hasattr(main_module, "ARTIFACT_PATHS"):
         monkeypatch.setattr(
             main_module,
@@ -70,15 +68,25 @@ def integration_env(tmp_path, monkeypatch):
             raising=False,
         )
 
-    # Monkeypatch health module paths if they exist
     if hasattr(health_module, "EMBEDDING_META_PATH"):
         monkeypatch.setattr(
-            health_module, "EMBEDDING_META_PATH", embedding_meta_path, raising=False
+            health_module,
+            "EMBEDDING_META_PATH",
+            embedding_meta_path,
+            raising=False,
         )
+
     if hasattr(health_module, "CHUNK_INDEX_META_PATH"):
         monkeypatch.setattr(
-            health_module, "CHUNK_INDEX_META_PATH", chunk_index_meta_path, raising=False
+            health_module,
+            "CHUNK_INDEX_META_PATH",
+            chunk_index_meta_path,
+            raising=False,
         )
+
+    # 중요: 각 테스트 시작 시 추천 캐시 비우기
+    app.state.embeddings = None
+    app.state.job_ids = None
 
     client = TestClient(app)
 
@@ -95,6 +103,8 @@ def integration_env(tmp_path, monkeypatch):
         },
     }
 
+    app.state.embeddings = None
+    app.state.job_ids = None
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
 
@@ -161,7 +171,17 @@ def seed_jobs(session_factory):
         db.close()
 
 
-def write_embedding_artifacts(paths: dict[Path, Path] | dict, job_ids=None):
+def load_recommendation_cache_into_app(paths: dict):
+    embeddings = np.load(paths["embedding_path"])
+
+    with paths["job_ids_path"].open("r", encoding="utf-8") as f:
+        job_ids = json.load(f)
+
+    app.state.embeddings = embeddings
+    app.state.job_ids = job_ids
+
+
+def write_embedding_artifacts(paths: dict, job_ids=None):
     if job_ids is None:
         job_ids = [1, 2, 3]
 
@@ -180,6 +200,7 @@ def write_embedding_artifacts(paths: dict[Path, Path] | dict, job_ids=None):
         json.dump(job_ids, f)
 
     paths["chunk_index_path"].write_bytes(b"dummy-index")
+
     with paths["chunk_meta_path"].open("w", encoding="utf-8") as f:
         json.dump([], f)
 

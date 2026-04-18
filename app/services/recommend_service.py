@@ -2,6 +2,7 @@ import json
 
 import numpy as np
 from fastapi import HTTPException
+from fastapi import Request
 from sqlalchemy.orm import Session
 
 from app.config import EMBEDDING_PATH, JOB_IDS_PATH
@@ -9,15 +10,10 @@ from app.models import Job
 from app.recommendation import compute_hybrid_score, parse_skills
 
 
-def load_embeddings():
+def load_embeddings_from_disk():
     if not EMBEDDING_PATH.exists() or not JOB_IDS_PATH.exists():
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Embedding files not found. "
-                f"expected={EMBEDDING_PATH} and {JOB_IDS_PATH}. "
-                "Run build_embeddings first."
-            ),
+        raise FileNotFoundError(
+            f"Embedding files not found: {EMBEDDING_PATH} and {JOB_IDS_PATH}"
         )
 
     embeddings = np.load(EMBEDDING_PATH)
@@ -26,16 +22,33 @@ def load_embeddings():
         job_ids = json.load(f)
 
     if len(embeddings) == 0 or len(job_ids) == 0:
-        raise HTTPException(status_code=500, detail="Embedding data is empty.")
+        raise ValueError("Embedding data is empty.")
 
     if len(embeddings) != len(job_ids):
-        raise HTTPException(status_code=500, detail="Embedding data is inconsistent.")
+        raise ValueError("Embedding data is inconsistent.")
+
+    return embeddings, job_ids
+
+
+def get_cached_embeddings(request: Request):
+    embeddings = getattr(request.app.state, "embeddings", None)
+    job_ids = getattr(request.app.state, "job_ids", None)
+
+    if embeddings is None or job_ids is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Recommendation artifacts are not loaded. "
+                "Run build_embeddings and restart the app."
+            ),
+        )
 
     return embeddings, job_ids
 
 
 def list_recommendations(
     db: Session,
+    request: Request,
     job_id: int,
     limit: int = 5,
     same_category_only: bool = False,
@@ -44,7 +57,7 @@ def list_recommendations(
     if not target_job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    embeddings, job_ids = load_embeddings()
+    embeddings, job_ids = get_cached_embeddings(request)
 
     if job_id not in job_ids:
         raise HTTPException(status_code=404, detail="Embedding not found for this job")
