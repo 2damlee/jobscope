@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -9,14 +9,16 @@ router = APIRouter(prefix="/recommend", tags=["recommend"])
 
 
 @router.get("/{job_id}", response_model=list[RecommendedJobResponse])
-def recommend_jobs(
+def read_recommendations(
+    request: Request,
     job_id: int,
-    limit: int = Query(default=5, le=20),
+    limit: int = Query(default=5, ge=1, le=20),
     same_category_only: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
     return list_recommendations(
         db=db,
+        request=request,
         job_id=job_id,
         limit=limit,
         same_category_only=same_category_only,

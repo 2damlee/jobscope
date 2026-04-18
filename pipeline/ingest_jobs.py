@@ -20,7 +20,12 @@ def clean_text(value):
 
 def normalize_location(value):
     value = clean_text(value)
-    return value.title() if value else None
+    if not value:
+        return None
+
+    # "Berlin, Germany" -> "Berlin"
+    city = value.split(",")[0].strip()
+    return city.title() if city else None
 
 
 def normalize_category(value):
@@ -30,7 +35,25 @@ def normalize_category(value):
 
 def normalize_seniority(value):
     value = clean_text(value)
-    return value.lower() if value else None
+    if not value:
+        return None
+
+    normalized = value.strip().lower()
+
+    mapping = {
+        "junior": "Junior",
+        "jr": "Junior",
+        "mid": "Mid",
+        "middle": "Mid",
+        "intermediate": "Mid",
+        "senior": "Senior",
+        "sr": "Senior",
+        "lead": "Lead",
+        "staff": "Staff",
+        "principal": "Principal",
+    }
+
+    return mapping.get(normalized, value.strip().title())
 
 
 def parse_date(value):

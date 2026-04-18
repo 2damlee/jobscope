@@ -9,38 +9,44 @@ from rag.embeddings import embed_texts
 from rag.vector_store import build_faiss_index, save_faiss_index
 
 
+def collect_chunk_records(jobs):
+    chunk_records = []
+    chunk_texts = []
+
+    for job in jobs:
+        text = job.cleaned_description or job.description
+        if not text:
+            continue
+
+        chunks = chunk_text(text)
+
+        for i, chunk in enumerate(chunks):
+            chunk_records.append(
+                {
+                    "chunk_id": len(chunk_records),
+                    "job_id": job.id,
+                    "title": job.title,
+                    "company": job.company,
+                    "location": job.location,
+                    "category": job.category,
+                    "seniority": job.seniority,
+                    "chunk_text": chunk,
+                    "chunk_order": i,
+                    "chunk_length": len(chunk),
+                }
+            )
+            chunk_texts.append(chunk)
+
+    return chunk_records, chunk_texts
+
+
 def build_chunk_index():
     db = SessionLocal()
-
     try:
         ensure_data_dirs()
-
         jobs = db.query(Job).all()
-        chunk_records = []
-        chunk_texts = []
 
-        for job in jobs:
-            text = job.cleaned_description or job.description
-            if not text:
-                continue
-
-            chunks = chunk_text(text)
-            for i, chunk in enumerate(chunks):
-                chunk_records.append(
-                    {
-                        "chunk_id": len(chunk_records),
-                        "job_id": job.id,
-                        "title": job.title,
-                        "company": job.company,
-                        "location": job.location,
-                        "category": job.category,
-                        "seniority": job.seniority,
-                        "chunk_text": chunk,
-                        "chunk_order": i,
-                        "chunk_length": len(chunk),
-                    }
-                )
-                chunk_texts.append(chunk)
+        chunk_records, chunk_texts = collect_chunk_records(jobs)
 
         vectors = embed_texts(chunk_texts)
         index = build_faiss_index(vectors)
@@ -54,10 +60,9 @@ def build_chunk_index():
             "chunk_count": len(chunk_records),
             "artifact": "job_chunks_index",
             "avg_chunk_length": round(
-                sum(item["chunk_length"] for item in chunk_records) / len(chunk_records), 2
-            )
-            if chunk_records
-            else 0,
+                sum(item["chunk_length"] for item in chunk_records) / len(chunk_records),
+                2,
+            ) if chunk_records else 0,
         }
 
         with CHUNK_INDEX_META_PATH.open("w", encoding="utf-8") as f:

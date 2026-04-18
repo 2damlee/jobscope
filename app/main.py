@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -10,11 +11,9 @@ from app.api.recommend import router as recommend_router
 from app.config import ARTIFACT_PATHS
 from app.logging import setup_logger
 from app.middleware import RequestLoggingMiddleware
+from app.services.recommend_service import load_embeddings_from_disk
 
 logger = setup_logger()
-
-app = FastAPI(title="JobScope API", version="0.1.0")
-app.add_middleware(RequestLoggingMiddleware)
 
 
 def artifact_status() -> dict:
@@ -44,8 +43,8 @@ def artifact_status() -> dict:
     }
 
 
-@app.on_event("startup")
-def validate_artifacts():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     status = artifact_status()
 
     for item in status["artifacts"]:
@@ -54,6 +53,17 @@ def validate_artifacts():
         else:
             logger.warning(f"artifact missing: {item['path']}")
 
+    app.state.embeddings = None
+    app.state.job_ids = None
+
+    try:
+        embeddings, job_ids = load_embeddings_from_disk()
+        app.state.embeddings = embeddings
+        app.state.job_ids = job_ids
+        logger.info(f"recommendation cache loaded: {len(job_ids)} jobs")
+    except Exception as exc:
+        logger.warning(f"recommendation cache unavailable at startup: {exc}")
+
     if status["ready"]:
         logger.info("artifact readiness: ready")
     else:
@@ -61,14 +71,26 @@ def validate_artifacts():
             f"artifact readiness: degraded ({status['missing_count']} missing)"
         )
 
+    yield
+
+
+app = FastAPI(title="JobScope API", version="0.1.0", lifespan=lifespan)
+app.add_middleware(RequestLoggingMiddleware)
+
 
 @app.get("/")
 def read_root():
     status = artifact_status()
+    cache_loaded = (
+        getattr(app.state, "embeddings", None) is not None
+        and getattr(app.state, "job_ids", None) is not None
+    )
+
     return {
         "message": "JobScope API is running",
         "status": "ok",
         "artifact_ready": status["ready"],
+        "recommendation_cache_loaded": cache_loaded,
     }
 
 
