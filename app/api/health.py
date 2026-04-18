@@ -1,11 +1,12 @@
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.artifacts import artifact_status
 from app.config import CHUNK_INDEX_META_PATH, EMBEDDING_META_PATH
 from app.db import SessionLocal, engine
 from app.models import PipelineRun
@@ -24,6 +25,7 @@ def get_db():
 def read_json_if_exists(path):
     if not path.exists():
         return None
+
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -50,10 +52,12 @@ def compute_staleness(meta: dict | None):
 
 
 @router.get("/ready")
-def health_ready():
-    from app.main import artifact_status
-
+def health_ready(request: Request):
     artifacts = artifact_status()
+    embeddings_ready = (
+        getattr(request.app.state, "embeddings", None) is not None
+        and getattr(request.app.state, "job_ids", None) is not None
+    )
 
     db_ok = True
     try:
@@ -62,10 +66,12 @@ def health_ready():
     except Exception:
         db_ok = False
 
-    ready = db_ok and artifacts["ready"]
+    ready = db_ok and artifacts["ready"] and embeddings_ready
+
     payload = {
         "status": "ready" if ready else "degraded",
         "database": "reachable" if db_ok else "unreachable",
+        "embeddings_in_memory": embeddings_ready,
         "artifacts": artifacts,
     }
 
@@ -131,6 +137,7 @@ def health_db():
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
+
         return {"status": "ok", "database": "reachable"}
     except Exception:
         return JSONResponse(

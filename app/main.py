@@ -1,6 +1,5 @@
 import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -8,39 +7,12 @@ from app.api.analytics import router as analytics_router
 from app.api.health import router as health_router
 from app.api.jobs import router as jobs_router
 from app.api.recommend import router as recommend_router
-from app.config import ARTIFACT_PATHS
+from app.artifacts import artifact_status
 from app.logging import setup_logger
 from app.middleware import RequestLoggingMiddleware
 from app.services.recommend_service import load_embeddings_from_disk
 
 logger = setup_logger()
-
-
-def artifact_status() -> dict:
-    items = []
-    missing = []
-
-    for path in ARTIFACT_PATHS:
-        path_obj = Path(path)
-        exists = path_obj.exists()
-
-        items.append(
-            {
-                "name": path_obj.name,
-                "path": str(path_obj),
-                "exists": exists,
-            }
-        )
-
-        if not exists:
-            missing.append(str(path_obj))
-
-    return {
-        "ready": len(missing) == 0,
-        "missing_count": len(missing),
-        "missing": missing,
-        "artifacts": items,
-    }
 
 
 @asynccontextmanager
