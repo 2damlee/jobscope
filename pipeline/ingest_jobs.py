@@ -3,6 +3,7 @@ from datetime import datetime
 import pandas as pd
 
 from app.config import CSV_PATH
+from app.time_utils import utcnow_naive
 from app.db import SessionLocal
 from app.models import Job
 from pipeline.run_tracker import finish_run, start_run
@@ -170,7 +171,7 @@ def ingest_jobs(full_rebuild: bool = False):
                 existing_job.description = description
                 existing_job.date_posted = date_posted
                 existing_job.source_hash = source_hash
-                existing_job.ingested_at = datetime.utcnow()
+                existing_job.ingested_at=utcnow_naive()
                 reset_downstream_state(existing_job)
 
                 updated += 1

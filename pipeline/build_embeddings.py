@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -12,6 +11,7 @@ from app.config import (
 )
 from app.db import SessionLocal
 from app.models import Job
+from app.time_utils import utcnow_naive
 
 MODEL_NAME = "all-MiniLM-L6-v2"
 
@@ -38,15 +38,7 @@ def build_embeddings():
         ensure_data_dirs()
 
         jobs = db.query(Job).all()
-        texts = []
-        job_ids = []
-
-        for job in jobs:
-            text = job.cleaned_description or job.description
-            if not text:
-                continue
-            texts.append(text)
-            job_ids.append(job.id)
+        texts, job_ids = collect_embedding_inputs(jobs)
 
         embeddings = model.encode(
             texts,
@@ -60,7 +52,7 @@ def build_embeddings():
             json.dump(job_ids, f)
 
         meta = {
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": utcnow_naive().isoformat(),
             "job_count": len(job_ids),
             "model_name": MODEL_NAME,
             "artifact": "job_embeddings",
@@ -77,6 +69,7 @@ def build_embeddings():
         }
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     build_embeddings()

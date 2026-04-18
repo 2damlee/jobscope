@@ -1,8 +1,7 @@
 import json
 
 import numpy as np
-from fastapi import HTTPException
-from fastapi import Request
+from fastapi import HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.config import EMBEDDING_PATH, JOB_IDS_PATH
@@ -28,6 +27,22 @@ def load_embeddings_from_disk():
         raise ValueError("Embedding data is inconsistent.")
 
     return embeddings, job_ids
+
+
+def load_embeddings():
+    try:
+        return load_embeddings_from_disk()
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Embedding files not found. "
+                f"expected={EMBEDDING_PATH} and {JOB_IDS_PATH}. "
+                "Run build_embeddings first."
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
 
 
 def get_cached_embeddings(request: Request):
