@@ -1,8 +1,6 @@
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-
 from app.db import engine
 from app.models import Base
 

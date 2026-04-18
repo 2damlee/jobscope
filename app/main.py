@@ -1,39 +1,69 @@
 import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
-from app.api.jobs import router as jobs_router
 from app.api.analytics import router as analytics_router
-from app.api.recommend import router as recommend_router
 from app.api.health import router as health_router
-from app.config import EMBEDDING_PATH, JOB_IDS_PATH, CHUNK_INDEX_PATH, CHUNK_META_PATH
+from app.api.jobs import router as jobs_router
+from app.api.recommend import router as recommend_router
+from app.artifacts import artifact_status
 from app.logging import setup_logger
 from app.middleware import RequestLoggingMiddleware
+from app.services.recommend_service import load_embeddings_from_disk
 
 logger = setup_logger()
 
-app = FastAPI(title="JobScope API", version="0.1.0")
-app.add_middleware(RequestLoggingMiddleware)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    status = artifact_status()
 
-@app.on_event("startup")
-def validate_artifacts():
-    checks = {
-        "embedding_file": EMBEDDING_PATH,
-        "job_ids_file": JOB_IDS_PATH,
-        "chunk_index_file": CHUNK_INDEX_PATH,
-        "chunk_meta_file": CHUNK_META_PATH,
-    }
-
-    for name, path in checks.items():
-        if os.path.exists(path):
-            logger.info(f"{name} found: {path}")
+    for item in status["artifacts"]:
+        if item["exists"]:
+            logger.info(f"artifact found: {item['path']}")
         else:
-            logger.warning(f"{name} missing: {path}")
+            logger.warning(f"artifact missing: {item['path']}")
+
+    app.state.embeddings = None
+    app.state.job_ids = None
+
+    try:
+        embeddings, job_ids = load_embeddings_from_disk()
+        app.state.embeddings = embeddings
+        app.state.job_ids = job_ids
+        logger.info(f"recommendation cache loaded: {len(job_ids)} jobs")
+    except Exception as exc:
+        logger.warning(f"recommendation cache unavailable at startup: {exc}")
+
+    if status["ready"]:
+        logger.info("artifact readiness: ready")
+    else:
+        logger.warning(
+            f"artifact readiness: degraded ({status['missing_count']} missing)"
+        )
+
+    yield
+
+
+app = FastAPI(title="JobScope API", version="0.1.0", lifespan=lifespan)
+app.add_middleware(RequestLoggingMiddleware)
 
 
 @app.get("/")
 def read_root():
-    return {"message": "JobScope API is running", "status": "ok"}
+    status = artifact_status()
+    cache_loaded = (
+        getattr(app.state, "embeddings", None) is not None
+        and getattr(app.state, "job_ids", None) is not None
+    )
+
+    return {
+        "message": "JobScope API is running",
+        "status": "ok",
+        "artifact_ready": status["ready"],
+        "recommendation_cache_loaded": cache_loaded,
+    }
 
 
 app.include_router(jobs_router)
@@ -45,6 +75,7 @@ ENABLE_RAG = os.getenv("ENABLE_RAG", "false").lower() == "true"
 
 if ENABLE_RAG:
     from app.api.rag import router as rag_router
+
     app.include_router(rag_router)
 else:
     logger.info("RAG router disabled in current runtime.")

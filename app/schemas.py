@@ -1,6 +1,6 @@
 from datetime import date
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class JobResponse(BaseModel):
@@ -16,8 +16,7 @@ class JobResponse(BaseModel):
     date_posted: date | None = None
     url: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class JobListResponse(BaseModel):
@@ -44,10 +43,24 @@ class RecommendedJobResponse(BaseModel):
 
 
 class RagAskRequest(BaseModel):
-    question: str = Field(..., example="Which backend jobs require FastAPI and PostgreSQL?")
-    category: str | None = Field(default=None, example="Backend")
-    location: str | None = Field(default=None, example="Berlin")
-    seniority: str | None = Field(default=None, example="Junior")
+    question: str = Field(
+        ...,
+        json_schema_extra={
+            "example": "Which backend jobs require FastAPI and PostgreSQL?"
+        },
+    )
+    category: str | None = Field(
+        default=None,
+        json_schema_extra={"example": "Backend"},
+    )
+    location: str | None = Field(
+        default=None,
+        json_schema_extra={"example": "Berlin"},
+    )
+    seniority: str | None = Field(
+        default=None,
+        json_schema_extra={"example": "Junior"},
+    )
     top_k: int = Field(default=3, ge=1, le=10)
 
 

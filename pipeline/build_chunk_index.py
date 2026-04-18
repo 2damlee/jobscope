@@ -1,9 +1,9 @@
 import json
-from datetime import datetime
 
 from app.config import CHUNK_INDEX_META_PATH, CHUNK_INDEX_PATH, CHUNK_META_PATH, ensure_data_dirs
 from app.db import SessionLocal
 from app.models import Job
+from app.time_utils import utcnow_naive
 from pipeline.rebuild_utils import should_rebuild_from_dirty_count
 from pipeline.run_tracker import finish_run, start_run
 from rag.chunking import chunk_text
@@ -34,6 +34,7 @@ def collect_chunk_records(jobs):
             continue
 
         chunks = chunk_text(text)
+
         for i, chunk in enumerate(chunks):
             chunk_records.append(
                 {
@@ -90,7 +91,7 @@ def build_chunk_index():
         with CHUNK_INDEX_META_PATH.open("w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "generated_at": datetime.utcnow().isoformat(),
+                    "generated_at": utcnow_naive().isoformat(),
                     "chunk_count": len(chunk_records),
                     "job_count": len({r["job_id"] for r in chunk_records}),
                 },
@@ -99,8 +100,9 @@ def build_chunk_index():
                 indent=2,
             )
 
-        now = datetime.utcnow()
+        now = utcnow_naive()
         touched_job_ids = sorted({r["job_id"] for r in chunk_records})
+
         if touched_job_ids:
             db.query(Job).filter(Job.id.in_(touched_job_ids)).update(
                 {"chunked_at": now},

@@ -1,14 +1,14 @@
 import json
-import os
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from app.db import engine
+from sqlalchemy.orm import Session
 
+from app.artifacts import artifact_status
 from app.config import CHUNK_INDEX_META_PATH, EMBEDDING_META_PATH
-from app.db import SessionLocal
+from app.db import SessionLocal, engine
 from app.models import PipelineRun
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -22,16 +22,17 @@ def get_db():
         db.close()
 
 
-def read_json_if_exists(path: str):
-    if not os.path.exists(path):
+def read_json_if_exists(path):
+    if not path.exists():
         return None
-    with open(path, "r") as f:
+
+    with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def compute_staleness(meta: dict | None):
     if not meta or "generated_at" not in meta:
-        return {"available": False, "stale": None}
+        return {"available": False, "stale": None, "age_hours": None}
 
     try:
         generated_at = datetime.fromisoformat(meta["generated_at"])
@@ -47,7 +48,40 @@ def compute_staleness(meta: dict | None):
             "age_hours": age_hours,
         }
     except Exception:
-        return {"available": True, "stale": None}
+        return {"available": True, "stale": None, "age_hours": None}
+
+
+@router.get("/ready")
+def health_ready(request: Request):
+    artifacts = artifact_status()
+    embeddings_ready = (
+        getattr(request.app.state, "embeddings", None) is not None
+        and getattr(request.app.state, "job_ids", None) is not None
+    )
+
+    db_ok = True
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception:
+        db_ok = False
+
+    ready = db_ok and artifacts["ready"] and embeddings_ready
+
+    payload = {
+        "status": "ready" if ready else "degraded",
+        "database": "reachable" if db_ok else "unreachable",
+        "embeddings_in_memory": embeddings_ready,
+        "artifacts": artifacts,
+    }
+
+    if ready:
+        return payload
+
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content=payload,
+    )
 
 
 @router.get("/indexes")
@@ -96,16 +130,20 @@ def health_pipeline(db: Session = Depends(get_db)):
             for run in runs
         ]
     }
-    
+
+
 @router.get("/db")
 def health_db():
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
+
         return {"status": "ok", "database": "reachable"}
-    except Exception as exc:
-        return {
-            "status": "error",
-            "database": "unreachable",
-            "detail": str(exc),
-        }
+    except Exception:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "error",
+                "database": "unreachable",
+            },
+        )

@@ -1,7 +1,9 @@
 import faiss
 import numpy as np
 
-INDEX_PATH = "data/processed/job_chunks.faiss"
+from app.config import CHUNK_INDEX_PATH
+
+INDEX_PATH = str(CHUNK_INDEX_PATH)
 
 
 def build_faiss_index(vectors: np.ndarray):

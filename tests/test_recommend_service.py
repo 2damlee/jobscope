@@ -30,5 +30,5 @@ def test_load_embeddings_raises_when_files_are_missing(tmp_path, monkeypatch):
     with pytest.raises(HTTPException) as exc:
         recommend_service.load_embeddings()
 
-    assert exc.value.status_code == 500
+    assert exc.value.status_code == 503
     assert "Embedding files not found" in exc.value.detail
