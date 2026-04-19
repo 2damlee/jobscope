@@ -1,7 +1,6 @@
-from datetime import datetime
-
 from app.db import SessionLocal
 from app.models import Job
+from app.time_utils import utcnow_naive
 from pipeline.clean_jobs import clean_description
 from pipeline.extract_skills import extract_skills
 from pipeline.run_tracker import finish_run, start_run
@@ -14,7 +13,7 @@ def select_pending_jobs(db):
 def process_single_job(job: Job) -> dict:
     cleaned = clean_description(job.description)
     skills = extract_skills(cleaned)
-    now = datetime.utcnow()
+    now = utcnow_naive()
 
     job.cleaned_description = cleaned
     job.detected_skills = ",".join(skills)
@@ -58,6 +57,7 @@ def process_jobs():
         db.commit()
 
         summary = summarize_results(results)
+
         finish_run(
             db,
             run,

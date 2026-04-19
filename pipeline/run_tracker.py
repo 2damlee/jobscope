@@ -1,6 +1,5 @@
-from datetime import datetime
-
 from app.models import PipelineRun
+from app.time_utils import utcnow_naive
 
 
 def start_run(
@@ -14,7 +13,7 @@ def start_run(
         status="started",
         source_name=source_name,
         input_rows=input_rows,
-        started_at=datetime.utcnow(),
+        started_at=utcnow_naive(),
     )
     db.add(run)
     db.commit()
@@ -34,9 +33,9 @@ def finish_run(
     metrics: dict | None = None,
     error_message: str | None = None,
 ):
-    finished_at = datetime.utcnow()
-    duration_seconds = None
+    finished_at = utcnow_naive()
 
+    duration_seconds = None
     if run.started_at:
         duration_seconds = round((finished_at - run.started_at).total_seconds(), 3)
 

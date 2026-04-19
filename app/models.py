@@ -1,8 +1,7 @@
-from datetime import datetime
-
 from sqlalchemy import Column, Date, DateTime, Integer, JSON, String, Text
 
 from app.db import Base
+from app.time_utils import utcnow_naive
 
 
 class Job(Base):
@@ -21,14 +20,14 @@ class Job(Base):
     url = Column(String, unique=True, nullable=False)
 
     processing_status = Column(String, nullable=False, default="pending")
-    ingested_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ingested_at = Column(DateTime, nullable=False, default=utcnow_naive)
     last_processed_at = Column(DateTime, nullable=True)
-
     source_hash = Column(String, nullable=True, index=True)
     skills_extracted_at = Column(DateTime, nullable=True)
     embedded_at = Column(DateTime, nullable=True)
     chunked_at = Column(DateTime, nullable=True)
-    
+
+
 class PipelineRun(Base):
     __tablename__ = "pipeline_runs"
 
@@ -36,15 +35,12 @@ class PipelineRun(Base):
     pipeline_name = Column(String, nullable=False, index=True)
     status = Column(String, nullable=False, index=True)
     source_name = Column(String, nullable=True)
-
     input_rows = Column(Integer, nullable=True)
     output_rows = Column(Integer, nullable=True)
     inserted_rows = Column(Integer, nullable=True)
     updated_rows = Column(Integer, nullable=True)
     skipped_rows = Column(Integer, nullable=True)
-
     metrics = Column(JSON, nullable=True)
     error_message = Column(Text, nullable=True)
-
-    started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=False, default=utcnow_naive)
     finished_at = Column(DateTime, nullable=True)
