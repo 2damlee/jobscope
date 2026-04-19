@@ -10,8 +10,8 @@ def ask_question(
     seniority: str | None = None,
     top_k: int = 3,
 ):
-    question = question.strip()
-    if not question:
+    normalized_question = question.strip()
+    if not normalized_question:
         raise HTTPException(status_code=422, detail="Question cannot be empty")
 
     normalized_category = category.strip().lower() if category else None
@@ -19,7 +19,7 @@ def ask_question(
     normalized_seniority = seniority.strip().lower() if seniority else None
 
     return answer_question(
-        question=question,
+        question=normalized_question,
         category=normalized_category,
         location=normalized_location,
         seniority=normalized_seniority,
