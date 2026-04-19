@@ -1,11 +1,9 @@
-from datetime import datetime
-
 import pandas as pd
 
 from app.config import CSV_PATH
-from app.time_utils import utcnow_naive
 from app.db import SessionLocal
 from app.models import Job
+from app.time_utils import utcnow_naive
 from pipeline.run_tracker import finish_run, start_run
 from pipeline.state_utils import build_source_hash, has_source_changed
 
@@ -23,8 +21,6 @@ def normalize_location(value):
     value = clean_text(value)
     if not value:
         return None
-
-    # "Berlin, Germany" -> "Berlin"
     city = value.split(",")[0].strip()
     return city.title() if city else None
 
@@ -40,7 +36,6 @@ def normalize_seniority(value):
         return None
 
     normalized = value.strip().lower()
-
     mapping = {
         "junior": "Junior",
         "jr": "Junior",
@@ -53,7 +48,6 @@ def normalize_seniority(value):
         "staff": "Staff",
         "principal": "Principal",
     }
-
     return mapping.get(normalized, value.strip().title())
 
 
@@ -108,7 +102,6 @@ def ingest_jobs(full_rebuild: bool = False):
     skipped = 0
     changed = 0
     unchanged = 0
-
     skip_reasons = {
         "missing_url": 0,
         "missing_title": 0,
@@ -171,7 +164,7 @@ def ingest_jobs(full_rebuild: bool = False):
                 existing_job.description = description
                 existing_job.date_posted = date_posted
                 existing_job.source_hash = source_hash
-                existing_job.ingested_at=utcnow_naive()
+                existing_job.ingested_at = utcnow_naive()
                 reset_downstream_state(existing_job)
 
                 updated += 1
@@ -192,6 +185,7 @@ def ingest_jobs(full_rebuild: bool = False):
                     processing_status="pending",
                 )
                 db.add(job)
+
                 inserted += 1
                 changed += 1
 
@@ -236,7 +230,6 @@ def ingest_jobs(full_rebuild: bool = False):
             error_message=str(e),
         )
         raise
-
     finally:
         db.close()
 

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from pipeline.rebuild_utils import artifacts_exist, should_rebuild_from_dirty_count
 
 
