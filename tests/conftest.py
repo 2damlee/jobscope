@@ -1,11 +1,13 @@
 import json
-from pathlib import Path
+import os
 
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+os.environ.setdefault("PREFECT_LOGGING_TO_API_ENABLED", "false")
 
 from app.db import get_db
 from app.main import app
@@ -21,16 +23,15 @@ def integration_env(tmp_path, monkeypatch):
         database_url,
         connect_args={"check_same_thread": False},
     )
-    TestingSessionLocal = sessionmaker(
+    testing_session_local = sessionmaker(
         autocommit=False,
         autoflush=False,
         bind=engine,
     )
-
     Base.metadata.create_all(bind=engine)
 
     def override_get_db():
-        db = TestingSessionLocal()
+        db = testing_session_local()
         try:
             yield db
         finally:
@@ -50,8 +51,7 @@ def integration_env(tmp_path, monkeypatch):
     chunk_index_meta_path = tmp_path / "job_chunks_index_meta.json"
 
     monkeypatch.setattr(health_module, "engine", engine)
-    monkeypatch.setattr(health_module, "SessionLocal", TestingSessionLocal)
-
+    monkeypatch.setattr(health_module, "SessionLocal", testing_session_local)
     monkeypatch.setattr(recommend_service, "EMBEDDING_PATH", embedding_path)
     monkeypatch.setattr(recommend_service, "JOB_IDS_PATH", job_ids_path)
 
@@ -84,7 +84,6 @@ def integration_env(tmp_path, monkeypatch):
             raising=False,
         )
 
-    # 중요: 각 테스트 시작 시 추천 캐시 비우기
     app.state.embeddings = None
     app.state.job_ids = None
 
@@ -92,7 +91,7 @@ def integration_env(tmp_path, monkeypatch):
 
     yield {
         "client": client,
-        "session_factory": TestingSessionLocal,
+        "session_factory": testing_session_local,
         "paths": {
             "embedding_path": embedding_path,
             "job_ids_path": job_ids_path,
@@ -111,7 +110,6 @@ def integration_env(tmp_path, monkeypatch):
 
 def seed_jobs(session_factory):
     db = session_factory()
-
     try:
         job1 = Job(
             id=1,
@@ -152,7 +150,6 @@ def seed_jobs(session_factory):
             url="https://example.com/jobs/3",
             processing_status="done",
         )
-
         run = PipelineRun(
             pipeline_name="ingest_jobs",
             status="success",
@@ -164,7 +161,6 @@ def seed_jobs(session_factory):
             skipped_rows=0,
             metrics={"changed_rows": 3, "unchanged_rows": 0},
         )
-
         db.add_all([job1, job2, job3, run])
         db.commit()
     finally:
@@ -173,7 +169,6 @@ def seed_jobs(session_factory):
 
 def load_recommendation_cache_into_app(paths: dict):
     embeddings = np.load(paths["embedding_path"])
-
     with paths["job_ids_path"].open("r", encoding="utf-8") as f:
         job_ids = json.load(f)
 
@@ -193,7 +188,6 @@ def write_embedding_artifacts(paths: dict, job_ids=None):
         ],
         dtype=np.float32,
     )
-
     np.save(paths["embedding_path"], embeddings)
 
     with paths["job_ids_path"].open("w", encoding="utf-8") as f:

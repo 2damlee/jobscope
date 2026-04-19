@@ -25,3 +25,12 @@ def test_registered_paths():
     rag_enabled = os.getenv("ENABLE_RAG", "false").lower() == "true"
     if rag_enabled:
         assert "/rag/ask" in paths
+        
+def test_recommend_route_exists():
+    paths = {route.path for route in app.routes}
+    assert "/recommend/{job_id}" in paths
+
+
+def test_analytics_route_exists():
+    paths = {route.path for route in app.routes}
+    assert "/analytics/skills" in paths

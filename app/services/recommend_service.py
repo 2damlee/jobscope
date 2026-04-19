@@ -16,13 +16,11 @@ def load_embeddings_from_disk():
         )
 
     embeddings = np.load(EMBEDDING_PATH)
-
     with JOB_IDS_PATH.open("r", encoding="utf-8") as f:
         job_ids = json.load(f)
 
     if len(embeddings) == 0 or len(job_ids) == 0:
         raise ValueError("Embedding data is empty.")
-
     if len(embeddings) != len(job_ids):
         raise ValueError("Embedding data is inconsistent.")
 
@@ -61,10 +59,12 @@ def get_cached_embeddings(request: Request):
     return embeddings, job_ids
 
 
-def list_recommendations(
+def _build_ranked_recommendations(
     db: Session,
-    request: Request,
+    *,
     job_id: int,
+    embeddings,
+    job_ids,
     limit: int = 5,
     same_category_only: bool = False,
 ):
@@ -72,16 +72,14 @@ def list_recommendations(
     if not target_job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    embeddings, job_ids = get_cached_embeddings(request)
-
     if job_id not in job_ids:
         raise HTTPException(status_code=404, detail="Embedding not found for this job")
 
     target_idx = job_ids.index(job_id)
     target_vec = embeddings[target_idx]
     target_skills = parse_skills(target_job.detected_skills)
-
     embedding_scores = embeddings @ target_vec
+
     candidate_jobs = db.query(Job).filter(Job.id.in_(job_ids)).all()
     candidate_jobs_by_id = {job.id: job for job in candidate_jobs}
 
@@ -89,7 +87,6 @@ def list_recommendations(
 
     for idx, embedding_score in enumerate(embedding_scores):
         candidate_id = job_ids[idx]
-
         if candidate_id == job_id:
             continue
 
@@ -142,3 +139,40 @@ def list_recommendations(
 
     ranked.sort(key=lambda x: x["score"], reverse=True)
     return ranked[:limit]
+
+
+def list_recommendations(
+    db: Session,
+    request: Request,
+    job_id: int,
+    limit: int = 5,
+    same_category_only: bool = False,
+):
+    embeddings, job_ids = get_cached_embeddings(request)
+
+    return _build_ranked_recommendations(
+        db=db,
+        job_id=job_id,
+        embeddings=embeddings,
+        job_ids=job_ids,
+        limit=limit,
+        same_category_only=same_category_only,
+    )
+
+
+def list_recommendations_for_offline_eval(
+    db: Session,
+    job_id: int,
+    limit: int = 5,
+    same_category_only: bool = False,
+):
+    embeddings, job_ids = load_embeddings()
+
+    return _build_ranked_recommendations(
+        db=db,
+        job_id=job_id,
+        embeddings=embeddings,
+        job_ids=job_ids,
+        limit=limit,
+        same_category_only=same_category_only,
+    )

@@ -1,7 +1,7 @@
 import json
-from datetime import datetime
 
 from app.config import PROCESSED_DIR, ensure_data_dirs
+from app.time_utils import utcnow_naive
 from rag.qa import answer_question
 
 RAG_EVAL_CASES = [
@@ -21,15 +21,14 @@ def evaluate_single_case(case: dict) -> dict:
     expected_keywords = case.get("expected_keywords", [])
 
     result = answer_question(question)
-
     answer = result.get("answer", "") if isinstance(result, dict) else str(result)
     retrieved_chunks = result.get("results", []) if isinstance(result, dict) else []
 
     matched_keywords = [
-        keyword for keyword in expected_keywords
+        keyword
+        for keyword in expected_keywords
         if keyword.lower() in answer.lower()
     ]
-
     keyword_hit_rate = (
         round(len(matched_keywords) / len(expected_keywords), 3)
         if expected_keywords
@@ -57,6 +56,7 @@ def evaluate_single_case(case: dict) -> dict:
 def summarize_rag_results(results: list[dict]) -> dict:
     total_cases = len(results)
     passed_cases = sum(1 for r in results if r["keyword_hit_rate"] > 0)
+
     avg_keyword_hit_rate = (
         round(sum(r["keyword_hit_rate"] for r in results) / total_cases, 3)
         if total_cases
@@ -87,7 +87,7 @@ def save_rag_evaluation(summary: dict, results: list[dict]) -> str:
     output_path = PROCESSED_DIR / "rag_eval_results.json"
 
     payload = {
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": utcnow_naive().isoformat(),
         "summary": summary,
         "cases": results,
     }
@@ -107,7 +107,6 @@ def evaluate_rag() -> dict:
         "summary": summary,
         "output_path": output_path,
     }
-
     print(json.dumps(final_result, ensure_ascii=False, indent=2))
     return final_result
 

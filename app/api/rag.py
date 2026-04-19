@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Body
+
 from app.schemas import RagAskRequest, RagAskResponse
-from rag.qa import answer_question
+from app.services.rag_service import ask_question
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 
 
 @router.post("/ask", response_model=RagAskResponse)
 def ask_rag(request: RagAskRequest = Body(...)):
-    return answer_question(
+    return ask_question(
         question=request.question,
         category=request.category,
         location=request.location,

@@ -1,28 +1,23 @@
 import json
-from datetime import datetime
 
 from app.config import PROCESSED_DIR, ensure_data_dirs
 from app.db import SessionLocal
 from app.models import Job
-from app.services.recommend_service import list_recommendations
 from app.recommendation import parse_skills
+from app.services.recommend_service import list_recommendations
+from app.time_utils import utcnow_naive
 
 
 def evaluate_recommendations(limit: int = 5, sample_size: int = 20) -> dict:
     db = SessionLocal()
 
     try:
-        jobs = (
-            db.query(Job)
-            .filter(Job.detected_skills.isnot(None))
-            .all()
-        )[:sample_size]
+        jobs = db.query(Job).filter(Job.detected_skills.isnot(None)).all()[:sample_size]
 
         evaluated_jobs = 0
         jobs_with_recommendations = 0
         jobs_with_shared_skills = 0
         total_recommendations = 0
-
         case_results = []
 
         for job in jobs:
@@ -31,6 +26,7 @@ def evaluate_recommendations(limit: int = 5, sample_size: int = 20) -> dict:
                 continue
 
             recommendations = list_recommendations(db, job.id, limit=limit)
+
             evaluated_jobs += 1
 
             if recommendations:
@@ -39,7 +35,6 @@ def evaluate_recommendations(limit: int = 5, sample_size: int = 20) -> dict:
             shared_skill_recommendations = sum(
                 1 for item in recommendations if item["shared_skills"]
             )
-
             if shared_skill_recommendations > 0:
                 jobs_with_shared_skills += 1
 
@@ -72,7 +67,7 @@ def evaluate_recommendations(limit: int = 5, sample_size: int = 20) -> dict:
         with output_path.open("w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "generated_at": datetime.utcnow().isoformat(),
+                    "generated_at": utcnow_naive().isoformat(),
                     "summary": summary,
                     "cases": case_results,
                 },
@@ -85,7 +80,6 @@ def evaluate_recommendations(limit: int = 5, sample_size: int = 20) -> dict:
             "summary": summary,
             "output_path": str(output_path),
         }
-
     finally:
         db.close()
 
