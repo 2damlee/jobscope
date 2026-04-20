@@ -12,4 +12,4 @@ COPY . .
 
 EXPOSE 10000
 
-CMD sh -c "python -m pipeline.wait_for_db && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"
+CMD sh -c "python -m pipeline.wait_for_db && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"
