@@ -11,9 +11,7 @@ def run_step(command: list[str]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Bootstrap JobScope runtime state."
-    )
+    parser = argparse.ArgumentParser(description="Bootstrap JobScope runtime state.")
     parser.add_argument(
         "--full-rebuild",
         action="store_true",
@@ -24,7 +22,7 @@ def main() -> None:
     python = sys.executable
 
     run_step([python, "-m", "pipeline.wait_for_db"])
-    run_step([python, "-m", "pipeline.create_tables"])
+    run_step(["alembic", "upgrade", "head"])
 
     rebuild_command = [python, "-m", "pipeline.rebuild_all"]
     if args.full_rebuild:
