@@ -52,5 +52,8 @@ jobs:
       - name: Compile check
         run: python -m compileall app pipeline tests
 
+      - name: Run migrations
+        run: alembic upgrade head
+
       - name: Run tests
         run: pytest -q
