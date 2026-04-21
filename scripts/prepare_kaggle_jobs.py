@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -21,44 +22,100 @@ TARGET_COLUMNS = [
     "url",
 ]
 
-
 ROLE_PATTERNS = {
     "machine learning": [
-        "machine learning",
+        "machine learning engineer",
         "ml engineer",
-        "mlops",
+        "mlops engineer",
         "ai engineer",
-        "deep learning",
-        "nlp engineer",
-        "computer vision",
         "applied scientist",
-        "llm",
+        "research scientist",
+        "data scientist",
+        "computer vision engineer",
+        "nlp engineer",
+        "llm engineer",
+        "artificial intelligence engineer",
+        "deep learning engineer",
+        "ml platform engineer",
+        "ai/ml engineer",
     ],
     "data engineering": [
         "data engineer",
         "analytics engineer",
         "etl engineer",
-        "data platform",
-        "data warehouse",
+        "etl developer",
+        "data platform engineer",
+        "data warehouse engineer",
         "warehouse engineer",
-        "big data",
-        "data infrastructure",
+        "big data engineer",
+        "data infrastructure engineer",
+        "data pipeline engineer",
+        "data integration engineer",
+        "bi engineer",
+        "business intelligence engineer",
     ],
     "software engineering": [
+        "software engineer",
         "backend engineer",
         "back-end engineer",
         "backend developer",
         "back-end developer",
-        "software engineer",
         "platform engineer",
         "api engineer",
-        "python developer",
         "python engineer",
-        "full stack",
-        "full-stack",
+        "python developer",
+        "full stack engineer",
+        "full-stack engineer",
+        "full stack developer",
+        "full-stack developer",
+        "web developer",
+        "application developer",
+        "devops engineer",
+        "dev ops engineer",
+        "site reliability engineer",
+        "sre",
+        "cloud engineer",
+        "infrastructure engineer",
+        "systems engineer",
+        "solutions engineer",
+        "integration engineer",
+        "embedded engineer",
+        "firmware engineer",
     ],
 }
 
+# Keywords used both for tech-title detection and fallback category inference
+TECH_TITLE_KEYWORDS = [
+    "engineer",
+    "developer",
+    "scientist",
+    "machine learning",
+    "ml ",
+    "mlops",
+    "data ",
+    "analytics",
+    "backend",
+    "back-end",
+    "software",
+    "platform",
+    "api",
+    "python",
+    "devops",
+    "cloud",
+    "infrastructure",
+    "sre",
+    "site reliability",
+]
+
+SENIORITY_RULES: list[tuple[list[str], str]] = [
+    (["intern", "internship", "working student", "trainee"], "Intern"),
+    (["principal"], "Principal"),
+    (["staff engineer", r"\bstaff\b"], "Staff"),
+    (["lead", "head of", "tech lead", "team lead"], "Lead"),
+    (["senior", r"\bsr\b", r"\bsr\."], "Senior"),
+    (["junior", r"\bjr\b", r"\bjr\."], "Junior"),
+    (["mid-level", "mid level", "intermediate"], "Mid"),
+]
 
 def clean_text(value) -> str | None:
     if pd.isna(value):
@@ -66,15 +123,26 @@ def clean_text(value) -> str | None:
     text = str(value).replace("\x00", " ").strip()
     if not text:
         return None
-    text = " ".join(text.split())
-    return text
+    return " ".join(text.split())
 
 
-def normalize_location(value: str | None) -> str | None:
-    value = clean_text(value)
-    if not value:
-        return None
-    return value
+def normalize_location(value) -> str | None:
+    return clean_text(value)
+
+
+def normalize_date(series: pd.Series) -> pd.Series:
+    """
+    Parse timestamps robustly: try ms-epoch first, fall back to ISO strings.
+    Returns a Series of datetime.date objects (tz-naive).
+    """
+    # Try millisecond epoch
+    parsed = pd.to_datetime(series, errors="coerce", unit="ms", utc=True)
+    # For rows that failed (NaT), retry as ISO/general string
+    mask_nat = parsed.isna()
+    if mask_nat.any():
+        fallback = pd.to_datetime(series[mask_nat], errors="coerce", utc=True)
+        parsed[mask_nat] = fallback
+    return parsed.dt.tz_convert(None).dt.date
 
 
 def normalize_seniority(
@@ -86,53 +154,34 @@ def normalize_seniority(
     text = " ".join([p for p in parts if p]).lower()
 
     if not text and description:
-        text = (clean_text(description) or "")[:250].lower()
+        text = (clean_text(description) or "")[:400].lower()
 
     if not text:
         return None
 
-    if any(token in text for token in ["intern", "internship", "working student"]):
-        return "Intern"
-    if any(token in text for token in ["principal"]):
-        return "Principal"
-    if any(token in text for token in ["staff engineer", "staff "]):
-        return "Staff"
-    if any(token in text for token in ["lead", "head of"]):
-        return "Lead"
-    if any(token in text for token in ["senior", "sr.", " sr ", " sr,"]):
-        return "Senior"
-    if any(token in text for token in ["junior", "jr.", " jr ", " jr,"]):
-        return "Junior"
-    if any(token in text for token in ["mid-level", "mid level", "intermediate"]):
-        return "Mid"
+    for tokens, label in SENIORITY_RULES:
+        for token in tokens:
+            if re.search(token, text):
+                return label
 
     return None
 
 
-def infer_category(title: str | None, description: str | None, skills: str | None = None) -> str:
-    title_text = (clean_text(title) or "").lower()
-    skills_text = (clean_text(skills) or "").lower()
+# ---------------------------------------------------------------------------
+# Category / tech-title helpers
+# ---------------------------------------------------------------------------
 
+def infer_category_from_title(title: str | None) -> str:
+    title_text = (clean_text(title) or "").lower()
     for category, patterns in ROLE_PATTERNS.items():
         if any(pattern in title_text for pattern in patterns):
             return category
-
-    skill_hints = {
-        "machine learning": ["ml", "machine learning", "pytorch", "tensorflow", "llm", "nlp"],
-        "data engineering": ["spark", "airflow", "dbt", "etl", "kafka", "databricks"],
-        "software engineering": ["fastapi", "django", "flask", "react", "nodejs", "typescript"],
-    }
-
-    for category, hints in skill_hints.items():
-        if any(hint in skills_text for hint in hints):
-            return category
-
     return "other"
 
 
-def normalize_date(series: pd.Series) -> pd.Series:
-    parsed = pd.to_datetime(series, errors="coerce", unit="ms", utc=True)
-    return parsed.dt.tz_convert(None).dt.date
+def is_tech_like_title(title: str | None) -> bool:
+    title_text = (clean_text(title) or "").lower()
+    return any(keyword in title_text for keyword in TECH_TITLE_KEYWORDS)
 
 
 def read_csv_robust(path: Path, usecols: list[str] | None = None) -> pd.DataFrame:
@@ -174,6 +223,9 @@ def load_postings(external_dir: Path) -> pd.DataFrame:
         if col not in df.columns:
             df[col] = None
 
+    # Drop duplicate job_ids before any merge to prevent row explosion
+    df = df.drop_duplicates(subset=["job_id"]).copy()
+
     return df
 
 
@@ -199,12 +251,37 @@ def load_job_skills(external_dir: Path) -> pd.DataFrame:
     return grouped
 
 
+# ---------------------------------------------------------------------------
+# Core pipeline
+# ---------------------------------------------------------------------------
+
+def _build_description(row: pd.Series) -> str | None:
+    """Combine description, skills_desc, and skills_text into one field."""
+    parts = []
+    for col in ["description_base", "skills_desc", "skills_text"]:
+        val = row.get(col)
+        if isinstance(val, str) and val:
+            parts.append(val)
+    combined = "\n\n".join(parts).strip()
+    return clean_text(combined) if combined else None
+
+
+def _sort_bucket(df: pd.DataFrame) -> pd.DataFrame:
+    """Sort a priority bucket: newest first, then company/title alphabetically."""
+    return df.sort_values(
+        by=["date_posted", "company", "title"],
+        ascending=[False, True, True],
+        na_position="last",
+    ).copy()
+
+
 def prepare_dataframe(external_dir: Path, max_rows: int) -> pd.DataFrame:
     postings = load_postings(external_dir)
     job_skills = load_job_skills(external_dir)
 
     df = postings.merge(job_skills, on="job_id", how="left")
 
+    # --- Field normalisation ---
     df["title"] = df["title"].map(clean_text)
     df["company"] = df["company_name"].map(clean_text)
     df["location"] = df["location"].map(normalize_location)
@@ -213,56 +290,65 @@ def prepare_dataframe(external_dir: Path, max_rows: int) -> pd.DataFrame:
     df["skills_desc"] = df["skills_desc"].map(clean_text)
     df["skills_text"] = df["skills_text"].map(clean_text)
 
-    df["description"] = (
-        df["description_base"].fillna("")
-        + "\n\n"
-        + df["skills_desc"].fillna("")
-        + "\n\n"
-        + df["skills_text"].fillna("")
-    ).str.strip()
-    df["description"] = df["description"].map(clean_text)
+    df["description"] = df.apply(_build_description, axis=1)
 
     df["url"] = df["job_posting_url"].map(clean_text)
     if "application_url" in df.columns:
         df["url"] = df["url"].fillna(df["application_url"].map(clean_text))
 
-    df["seniority"] = df.apply(
-    lambda row: normalize_seniority(
-        row.get("formatted_experience_level"),
-        row.get("title"),
-        row.get("description"),
-    ),
-    axis=1,
-    )
-
     df["date_posted"] = normalize_date(df["original_listed_time"])
 
-    df["category"] = df.apply(
-        lambda row: infer_category(row["title"], row["description"], row.get("skills_text")),
+    df["seniority"] = df.apply(
+        lambda row: normalize_seniority(
+            row.get("formatted_experience_level"),
+            row.get("title"),
+            row.get("description"),
+        ),
         axis=1,
     )
 
+    df["category"] = df["title"].map(infer_category_from_title)
+    df["is_tech_like_title"] = df["title"].map(is_tech_like_title)
+
+    # --- Quality filters ---
     df = df.dropna(subset=["title", "description", "url"]).copy()
     df = df[df["description"].str.len() >= 120].copy()
     df = df.drop_duplicates(subset=["url"]).copy()
 
-    tech_df = df[df["category"] != "other"].copy()
+    if "date_posted" not in df.columns:
+        df["date_posted"] = None
 
-    if len(tech_df) >= min(max_rows, 300):
-        df = tech_df
+    # --- Priority bucketing (sort happens per-bucket to preserve ordering) ---
+    classified_tech_df = _sort_bucket(df[df["category"] != "other"].copy())
+    fallback_tech_df = _sort_bucket(
+        df[(df["category"] == "other") & df["is_tech_like_title"]].copy()
+    )
+    remaining_df = _sort_bucket(
+        df[
+            ~df["url"].isin(classified_tech_df["url"])
+            & ~df["url"].isin(fallback_tech_df["url"])
+        ].copy()
+    )
 
-    df = df.sort_values(
-        by=["date_posted", "company", "title"],
-        ascending=[False, True, True],
-        na_position="last",
-    ).head(max_rows)
+    selected = pd.concat(
+        [classified_tech_df, fallback_tech_df, remaining_df],
+        ignore_index=True,
+    )
 
-    result = df[TARGET_COLUMNS].reset_index(drop=True)
+    selected = selected.drop_duplicates(subset=["url"]).head(max_rows).copy()
+
+    result = selected[TARGET_COLUMNS].reset_index(drop=True)
     return result
 
 
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Prepare Kaggle LinkedIn job postings for JobScope."
+    )
     parser.add_argument("--external-dir", type=str, default=str(DEFAULT_EXTERNAL_DIR))
     parser.add_argument("--output", type=str, default=str(DEFAULT_OUTPUT_PATH))
     parser.add_argument("--max-rows", type=int, default=800)
