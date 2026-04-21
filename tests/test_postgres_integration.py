@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-
 pytestmark = pytest.mark.skipif(
     not os.getenv("DATABASE_URL", "").startswith("postgresql"),
     reason="Postgres integration test requires a PostgreSQL DATABASE_URL",
@@ -13,8 +12,8 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_health_db_and_pipeline_with_postgres(monkeypatch):
-    from app.db import SessionLocal
-    from app.models import Base, PipelineRun, engine
+    from app.db import Base, SessionLocal, engine
+    from app.models import PipelineRun
 
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
@@ -51,8 +50,8 @@ def test_health_db_and_pipeline_with_postgres(monkeypatch):
 
     pipeline_response = client.get("/health/pipeline")
     assert pipeline_response.status_code == 200
-
     data = pipeline_response.json()
+
     assert "runs" in data
     assert len(data["runs"]) >= 1
     assert data["runs"][0]["pipeline_name"] == "ingest_jobs"
