@@ -77,9 +77,16 @@ def normalize_location(value: str | None) -> str | None:
     return value
 
 
-def normalize_seniority(value: str | None, title: str | None = None) -> str | None:
+def normalize_seniority(
+    value: str | None,
+    title: str | None = None,
+    description: str | None = None,
+) -> str | None:
     parts = [clean_text(value), clean_text(title)]
     text = " ".join([p for p in parts if p]).lower()
+
+    if not text and description:
+        text = (clean_text(description) or "")[:250].lower()
 
     if not text:
         return None
@@ -88,15 +95,15 @@ def normalize_seniority(value: str | None, title: str | None = None) -> str | No
         return "Intern"
     if any(token in text for token in ["principal"]):
         return "Principal"
-    if any(token in text for token in ["staff"]):
+    if any(token in text for token in ["staff engineer", "staff "]):
         return "Staff"
     if any(token in text for token in ["lead", "head of"]):
         return "Lead"
-    if any(token in text for token in ["senior", "sr. ", " sr ", " sr,"]):
+    if any(token in text for token in ["senior", "sr.", " sr ", " sr,"]):
         return "Senior"
-    if any(token in text for token in ["junior", "jr. ", " jr ", " jr,"]):
+    if any(token in text for token in ["junior", "jr.", " jr ", " jr,"]):
         return "Junior"
-    if any(token in text for token in ["mid", "intermediate"]):
+    if any(token in text for token in ["mid-level", "mid level", "intermediate"]):
         return "Mid"
 
     return None
@@ -220,8 +227,12 @@ def prepare_dataframe(external_dir: Path, max_rows: int) -> pd.DataFrame:
         df["url"] = df["url"].fillna(df["application_url"].map(clean_text))
 
     df["seniority"] = df.apply(
-        lambda row: normalize_seniority(row.get("formatted_experience_level"), row.get("title")),
-        axis=1,
+    lambda row: normalize_seniority(
+        row.get("formatted_experience_level"),
+        row.get("title"),
+        row.get("description"),
+    ),
+    axis=1,
     )
 
     df["date_posted"] = normalize_date(df["original_listed_time"])
