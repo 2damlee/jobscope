@@ -21,6 +21,7 @@ def load_embeddings_from_disk():
 
     if len(embeddings) == 0 or len(job_ids) == 0:
         raise ValueError("Embedding data is empty.")
+
     if len(embeddings) != len(job_ids):
         raise ValueError("Embedding data is inconsistent.")
 
@@ -67,6 +68,8 @@ def _build_ranked_recommendations(
     job_ids,
     limit: int = 5,
     same_category_only: bool = False,
+    min_shared_skills: int = 0,
+    min_embedding_score: float | None = None,
 ):
     target_job = db.query(Job).filter(Job.id == job_id).first()
     if not target_job:
@@ -78,6 +81,7 @@ def _build_ranked_recommendations(
     target_idx = job_ids.index(job_id)
     target_vec = embeddings[target_idx]
     target_skills = parse_skills(target_job.detected_skills)
+
     embedding_scores = embeddings @ target_vec
 
     candidate_jobs = db.query(Job).filter(Job.id.in_(job_ids)).all()
@@ -87,6 +91,7 @@ def _build_ranked_recommendations(
 
     for idx, embedding_score in enumerate(embedding_scores):
         candidate_id = job_ids[idx]
+
         if candidate_id == job_id:
             continue
 
@@ -104,6 +109,12 @@ def _build_ranked_recommendations(
 
         candidate_skills = parse_skills(candidate_job.detected_skills)
         shared_skills = sorted(list(target_skills & candidate_skills))
+
+        if len(shared_skills) < min_shared_skills:
+            continue
+
+        if min_embedding_score is not None and float(embedding_score) < min_embedding_score:
+            continue
 
         score_parts = compute_hybrid_score(
             embedding_score=float(embedding_score),
@@ -128,6 +139,11 @@ def _build_ranked_recommendations(
             {
                 "job_id": int(candidate_job.id),
                 "title": str(candidate_job.title),
+                "company": candidate_job.company,
+                "location": candidate_job.location,
+                "category": candidate_job.category,
+                "seniority": candidate_job.seniority,
+                "url": candidate_job.url,
                 "score": score,
                 "embedding_score": embedding_score_value,
                 "skill_overlap_score": skill_overlap_score,
@@ -137,7 +153,17 @@ def _build_ranked_recommendations(
             }
         )
 
-    ranked.sort(key=lambda x: x["score"], reverse=True)
+    ranked.sort(
+        key=lambda x: (
+            x["score"],
+            x["embedding_score"],
+            len(x["shared_skills"]),
+            x["same_category"],
+            x["same_seniority"],
+        ),
+        reverse=True,
+    )
+
     return ranked[:limit]
 
 
@@ -147,9 +173,10 @@ def list_recommendations(
     job_id: int,
     limit: int = 5,
     same_category_only: bool = False,
+    min_shared_skills: int = 0,
+    min_embedding_score: float | None = None,
 ):
     embeddings, job_ids = get_cached_embeddings(request)
-
     return _build_ranked_recommendations(
         db=db,
         job_id=job_id,
@@ -157,6 +184,8 @@ def list_recommendations(
         job_ids=job_ids,
         limit=limit,
         same_category_only=same_category_only,
+        min_shared_skills=min_shared_skills,
+        min_embedding_score=min_embedding_score,
     )
 
 
@@ -165,9 +194,10 @@ def list_recommendations_for_offline_eval(
     job_id: int,
     limit: int = 5,
     same_category_only: bool = False,
+    min_shared_skills: int = 0,
+    min_embedding_score: float | None = None,
 ):
     embeddings, job_ids = load_embeddings()
-
     return _build_ranked_recommendations(
         db=db,
         job_id=job_id,
@@ -175,4 +205,6 @@ def list_recommendations_for_offline_eval(
         job_ids=job_ids,
         limit=limit,
         same_category_only=same_category_only,
+        min_shared_skills=min_shared_skills,
+        min_embedding_score=min_embedding_score,
     )

@@ -34,6 +34,11 @@ class SkillCountResponse(BaseModel):
 class RecommendedJobResponse(BaseModel):
     job_id: int
     title: str
+    company: str | None = None
+    location: str | None = None
+    category: str | None = None
+    seniority: str | None = None
+    url: str | None = None
     score: float
     embedding_score: float
     skill_overlap_score: float
