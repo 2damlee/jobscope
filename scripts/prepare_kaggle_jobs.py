@@ -103,12 +103,21 @@ def normalize_seniority(value: str | None, title: str | None = None) -> str | No
 
 
 def infer_category(title: str | None, description: str | None, skills: str | None = None) -> str:
-    text = " ".join(
-        [part for part in [clean_text(title), clean_text(description), clean_text(skills)] if part]
-    ).lower()
+    title_text = (clean_text(title) or "").lower()
+    skills_text = (clean_text(skills) or "").lower()
 
     for category, patterns in ROLE_PATTERNS.items():
-        if any(pattern in text for pattern in patterns):
+        if any(pattern in title_text for pattern in patterns):
+            return category
+
+    skill_hints = {
+        "machine learning": ["ml", "machine learning", "pytorch", "tensorflow", "llm", "nlp"],
+        "data engineering": ["spark", "airflow", "dbt", "etl", "kafka", "databricks"],
+        "software engineering": ["fastapi", "django", "flask", "react", "nodejs", "typescript"],
+    }
+
+    for category, hints in skill_hints.items():
+        if any(hint in skills_text for hint in hints):
             return category
 
     return "other"
