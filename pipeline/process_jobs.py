@@ -67,7 +67,6 @@ def process_jobs():
             metrics=summary,
         )
         return summary
-
     except Exception as e:
         db.rollback()
         finish_run(
@@ -78,6 +77,10 @@ def process_jobs():
             error_message=str(e),
         )
         raise
-
     finally:
         db.close()
+
+
+if __name__ == "__main__":
+    result = process_jobs()
+    print(result)

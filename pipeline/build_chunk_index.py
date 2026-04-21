@@ -1,10 +1,14 @@
 import json
 
-from app.config import CHUNK_INDEX_META_PATH, CHUNK_INDEX_PATH, CHUNK_META_PATH, ensure_data_dirs
+from app.config import (
+    CHUNK_INDEX_META_PATH,
+    CHUNK_INDEX_PATH,
+    CHUNK_META_PATH,
+    ensure_data_dirs,
+)
 from app.db import SessionLocal
 from app.models import Job
 from app.time_utils import utcnow_naive
-from pipeline.rebuild_utils import should_rebuild_from_dirty_count
 from pipeline.run_tracker import finish_run, start_run
 from rag.chunking import chunk_text
 from rag.embeddings import embed_texts
@@ -12,15 +16,19 @@ from rag.vector_store import build_faiss_index, save_faiss_index
 
 
 def should_rebuild_chunk_index(db) -> tuple[bool, int]:
-    dirty_count = db.query(Job).filter(Job.chunked_at.is_(None)).count()
-    should_rebuild = should_rebuild_from_dirty_count(
-        dirty_count=dirty_count,
-        artifact_paths=[
-            str(CHUNK_INDEX_PATH),
-            str(CHUNK_META_PATH),
-            str(CHUNK_INDEX_META_PATH),
-        ],
+    dirty_count = (
+        db.query(Job)
+        .filter(Job.processing_status == "processed", Job.chunked_at.is_(None))
+        .count()
     )
+
+    artifacts_exist = (
+        CHUNK_INDEX_PATH.exists()
+        and CHUNK_META_PATH.exists()
+        and CHUNK_INDEX_META_PATH.exists()
+    )
+
+    should_rebuild = dirty_count > 0 or not artifacts_exist
     return should_rebuild, dirty_count
 
 
@@ -78,8 +86,44 @@ def build_chunk_index():
 
         ensure_data_dirs()
 
-        jobs = db.query(Job).all()
+        jobs = (
+            db.query(Job)
+            .filter(Job.processing_status == "processed")
+            .order_by(Job.id.asc())
+            .all()
+        )
+
         chunk_records, chunk_texts = collect_chunk_records(jobs)
+
+        if not chunk_texts:
+            with CHUNK_META_PATH.open("w", encoding="utf-8") as f:
+                json.dump([], f, ensure_ascii=False, indent=2)
+
+            with CHUNK_INDEX_META_PATH.open("w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "generated_at": utcnow_naive().isoformat(),
+                        "chunk_count": 0,
+                        "job_count": 0,
+                    },
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+
+            summary = {
+                "skipped_rebuild": False,
+                "dirty_jobs": dirty_count,
+                "chunk_count": 0,
+                "job_count": 0,
+                "artifact_paths": [
+                    str(CHUNK_INDEX_PATH),
+                    str(CHUNK_META_PATH),
+                    str(CHUNK_INDEX_META_PATH),
+                ],
+            }
+            finish_run(db, run, status="success", output_rows=0, metrics=summary)
+            return summary
 
         embeddings = embed_texts(chunk_texts)
         index = build_faiss_index(embeddings)
@@ -138,3 +182,8 @@ def build_chunk_index():
         raise
     finally:
         db.close()
+
+
+if __name__ == "__main__":
+    result = build_chunk_index()
+    print(result)
