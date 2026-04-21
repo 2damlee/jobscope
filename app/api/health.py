@@ -25,7 +25,6 @@ def get_db():
 def read_json_if_exists(path):
     if not path.exists():
         return None
-
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -38,10 +37,8 @@ def compute_staleness(meta: dict | None):
         generated_at = datetime.fromisoformat(meta["generated_at"])
         if generated_at.tzinfo is None:
             generated_at = generated_at.replace(tzinfo=timezone.utc)
-
         now = datetime.now(timezone.utc)
         age_hours = round((now - generated_at).total_seconds() / 3600, 2)
-
         return {
             "available": True,
             "stale": age_hours > 24,
@@ -51,31 +48,49 @@ def compute_staleness(meta: dict | None):
         return {"available": True, "stale": None, "age_hours": None}
 
 
+def check_db_ok() -> bool:
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
 @router.get("/ready")
 def health_ready(request: Request):
     artifacts = artifact_status()
-    embeddings_ready = (
+    db_ok = check_db_ok()
+
+    embeddings_in_memory = (
         getattr(request.app.state, "embeddings", None) is not None
         and getattr(request.app.state, "job_ids", None) is not None
     )
 
-    db_ok = True
-    try:
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-    except Exception:
-        db_ok = False
+    embedding_meta = read_json_if_exists(EMBEDDING_META_PATH)
+    chunk_meta = read_json_if_exists(CHUNK_INDEX_META_PATH)
 
-    ready = db_ok and artifacts["ready"] and embeddings_ready
+    recommend_ready = db_ok and embeddings_in_memory
+    rag_ready = db_ok and chunk_meta is not None and chunk_meta.get("chunk_count", 0) > 0
 
     payload = {
-        "status": "ready" if ready else "degraded",
+        "status": "ready" if recommend_ready else "degraded",
         "database": "reachable" if db_ok else "unreachable",
-        "embeddings_in_memory": embeddings_ready,
+        "recommend_ready": recommend_ready,
+        "rag_ready": rag_ready,
+        "embeddings_in_memory": embeddings_in_memory,
         "artifacts": artifacts,
+        "embedding_index": {
+            "meta": embedding_meta,
+            "status": compute_staleness(embedding_meta),
+        },
+        "chunk_index": {
+            "meta": chunk_meta,
+            "status": compute_staleness(chunk_meta),
+        },
     }
 
-    if ready:
+    if recommend_ready:
         return payload
 
     return JSONResponse(
@@ -134,16 +149,13 @@ def health_pipeline(db: Session = Depends(get_db)):
 
 @router.get("/db")
 def health_db():
-    try:
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-
+    if check_db_ok():
         return {"status": "ok", "database": "reachable"}
-    except Exception:
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={
-                "status": "error",
-                "database": "unreachable",
-            },
-        )
+
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "status": "error",
+            "database": "unreachable",
+        },
+    )
