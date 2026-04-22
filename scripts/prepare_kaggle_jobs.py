@@ -310,33 +310,28 @@ def prepare_dataframe(external_dir: Path, max_rows: int) -> pd.DataFrame:
     df["category"] = df["title"].map(infer_category_from_title)
     df["is_tech_like_title"] = df["title"].map(is_tech_like_title)
 
-    # --- Quality filters ---
     df = df.dropna(subset=["title", "description", "url"]).copy()
     df = df[df["description"].str.len() >= 120].copy()
     df = df.drop_duplicates(subset=["url"]).copy()
 
-    if "date_posted" not in df.columns:
-        df["date_posted"] = None
-
-    # --- Priority bucketing (sort happens per-bucket to preserve ordering) ---
     classified_tech_df = _sort_bucket(df[df["category"] != "other"].copy())
     fallback_tech_df = _sort_bucket(
         df[(df["category"] == "other") & df["is_tech_like_title"]].copy()
     )
-    remaining_df = _sort_bucket(
-        df[
-            ~df["url"].isin(classified_tech_df["url"])
-            & ~df["url"].isin(fallback_tech_df["url"])
-        ].copy()
-    )
 
+    # DO NOT include remaining_df — it's all non-tech
     selected = pd.concat(
-        [classified_tech_df, fallback_tech_df, remaining_df],
+        [classified_tech_df, fallback_tech_df],
         ignore_index=True,
-    )
+    ).drop_duplicates(subset=["url"])
 
-    selected = selected.drop_duplicates(subset=["url"]).head(max_rows).copy()
+    if len(selected) == 0:
+        raise RuntimeError(
+            "No tech jobs found. Check that postings.csv contains tech roles "
+            "and that title patterns cover them."
+        )
 
+    selected = _sort_bucket(selected).head(max_rows)
     result = selected[TARGET_COLUMNS].reset_index(drop=True)
     return result
 
