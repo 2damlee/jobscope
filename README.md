@@ -1,55 +1,39 @@
 # JobScope
 
-A pipeline-oriented backend project for ingesting, processing, and serving job posting data — with embedding-based search, hybrid recommendation, and retrieval-augmented Q&A.
+A pipeline-oriented backend project for ingesting, processing, and serving job posting data — with embedding-based recommendation, hybrid scoring, and retrieval-augmented Q&A.
 
 [![Live Demo](https://img.shields.io/badge/live-demo-brightgreen)](https://jobscope-jrur.onrender.com/docs)
 [![Python](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.135-009688)](https://fastapi.tiangolo.com/)
+[![CI](https://github.com/2damlee/jobscope/actions/workflows/ci.yml/badge.svg)](https://github.com/2damlee/jobscope/actions/workflows/ci.yml)
 
 ---
 
-## Why this project exists
+## What this is
 
-Most job search tools treat search as a keyword lookup. This project explores what happens when you combine structured filtering, embedding-based similarity, and retrieval-augmented generation — and what the pipeline behind that actually looks like end-to-end.
+Starting from real tech job postings (sourced from the LinkedIn public dataset on Kaggle), the system runs a multi-stage pipeline that builds a queryable API with search, recommendation, analytics, and optional RAG-based Q&A.
 
-The focus here isn't the ML itself. It's the decisions around data flow, API contract design, and making the pipeline reproducible and observable.
-
----
-
-## What it does
-
-Starting from a raw CSV of job postings, the system runs a multi-stage pipeline that produces a queryable API:
+The engineering focus is on the pipeline design: how data flows from ingestion to serving, how changes propagate downstream, and how the system behaves when artifacts are unavailable.
 
 ```
-CSV ingestion
-  → validation + normalization + deduplication (URL-keyed upsert)
-  → PostgreSQL storage
-  → rule-based skill extraction + text cleaning
-  → sentence-transformer embeddings (FAISS index)
-  → chunked document index (for retrieval)
+LinkedIn job postings CSV (Kaggle public dataset, tech roles)
+  → title-based categorization + seniority normalization
+  → validation + normalization + URL-keyed upsert
+  → PostgreSQL (schema managed by Alembic)
+  → rule-based skill extraction (60+ patterns)
+  → sentence-transformer embeddings, all-MiniLM-L6-v2 (FAISS index)
+  → chunked document index (for RAG retrieval)
   → FastAPI serving
 ```
 
-From there, four capabilities are exposed:
 
-- **Search** — keyword + field filter + pagination + sorting
-- **Skill analytics** — frequency of detected skills by category/seniority
-- **Recommendation** — hybrid scoring: embedding similarity + skill overlap + category/seniority match
-- **RAG Q&A** — chunk retrieval → semantic reranking → answer generation (opt-in via `ENABLE_RAG=true`)
 
----
+**2. Startup-time artifact caching with graceful degradation**
 
-## Design decisions worth noting
+Embedding artifacts are loaded into `app.state` once at startup via FastAPI's `lifespan` handler. Every recommendation request reads from memory using a single dot-product operation — no disk I/O per request. If artifacts are missing at startup, recommendation and RAG endpoints return `503 Service Unavailable` rather than crashing. `/health/ready` reflects full readiness state including artifact availability and database reachability.
 
-**Full rebuild vs incremental.** The pipeline supports both modes. Full rebuild re-ingests everything from scratch; incremental uses URL-keyed upsert to skip already-processed records. This distinction matters when the source data changes partially — you don't want to re-embed 10k records because 200 were added.
+**3. Pipeline observability via run tracking**
 
-**Why FAISS over a vector DB?** For a self-contained project without external infra dependencies, FAISS-cpu gives fast approximate nearest-neighbor search that persists to disk. A production replacement would be something like pgvector or Qdrant, but FAISS keeps this deployable with just Docker.
-
-**Why separate embeddings and chunk indexes?** The embedding index stores one vector per job (for recommendation). The chunk index stores passage-level chunks (for retrieval). They serve different retrieval patterns and are built separately so you can rebuild one without touching the other.
-
-**RAG as opt-in.** The `/rag/ask` endpoint is behind `ENABLE_RAG=true` because it requires the chunk index to be built and adds latency. Health endpoints (`/health/indexes`, `/health/pipeline`) let you check state before querying.
-
-**Pipeline run tracking.** Each pipeline stage logs its run status and metadata to PostgreSQL. `/health/pipeline` surfaces this, making it possible to see what ran, when, and whether it succeeded — without external monitoring tooling.
+Every pipeline stage records its execution — rows processed, duration in seconds, inserted/updated/skipped counts, error messages — into a `pipeline_runs` table. The `/health/pipeline` endpoint exposes the last 10 runs, making it possible to audit pipeline state without external monitoring tooling.
 
 ---
 
@@ -57,9 +41,10 @@ From there, four capabilities are exposed:
 
 | Layer | Tools |
 |---|---|
-| API | FastAPI, Uvicorn, Pydantic |
-| Storage | PostgreSQL, SQLAlchemy |
-| Embeddings | SentenceTransformers, FAISS |
+| API | FastAPI, Uvicorn, Pydantic v2 |
+| Storage | PostgreSQL, SQLAlchemy 2.x |
+| Migrations | Alembic |
+| Embeddings | SentenceTransformers (`all-MiniLM-L6-v2`), FAISS |
 | Orchestration | Prefect 3.x |
 | Deployment | Docker, docker-compose, Render |
 | Language | Python 3.11 |
@@ -70,30 +55,82 @@ From there, four capabilities are exposed:
 
 ```
 app/
-  api/routes/       # FastAPI route handlers
-  services/         # business logic layer
-  models/           # SQLAlchemy ORM models
-  crud/             # database access layer
-  schemas/          # Pydantic request/response schemas
+  api/              # route handlers — jobs, recommend, analytics, health, rag
+  services/         # business logic + input normalization
+  crud.py           # database query layer (PostgreSQL unnest for skill aggregation)
+  models.py         # SQLAlchemy ORM models
+  schemas.py        # Pydantic request/response schemas
+  artifacts.py      # artifact readiness check
+  time_utils.py     # timezone-safe datetime helper
 
 pipeline/
-  ingest_jobs.py    # CSV ingestion + upsert
-  process_jobs.py   # cleaning + skill extraction
-  build_embeddings.py   # embedding index construction
-  build_chunk_index.py  # chunked retrieval index
-  flows.py          # Prefect flow definitions
-  rebuild_all.py    # entrypoint (--full-rebuild flag)
+  ingest_jobs.py        # CSV ingestion, SHA-256 hash-based upsert, downstream reset
+  process_jobs.py       # text cleaning + rule-based skill extraction
+  build_embeddings.py   # FAISS embedding index, updates embedded_at per job
+  build_chunk_index.py  # chunked retrieval index, updates chunked_at per job
+  flows.py              # Prefect task and flow definitions
+  rebuild_all.py        # CLI entrypoint (--full-rebuild flag)
+  run_tracker.py        # pipeline run recording to DB
+  state_utils.py        # SHA-256 source hash computation
+  skill_dict.py         # 60+ skill extraction patterns
 
 rag/
-  chunking.py       # document chunking strategy
-  retriever.py      # semantic search + reranking
-  qa.py             # answer generation
+  chunking.py           # sentence-based chunking with overlap
+  retriever.py          # FAISS search + keyword overlap scoring
+  qa.py                 # reranking, deduplication, answer dispatch
+  answer_generation.py  # extractive answer generation
+  llm_client.py         # optional LLM backend (OpenAI-compatible)
 
-tests/              # unit + integration tests
-data/
-  raw/              # source CSVs
-  processed/        # eval outputs, index artifacts
+alembic/
+  env.py                # reads DATABASE_URL from environment
+  versions/             # migration history (initial_schema committed)
+
+scripts/
+  prepare_kaggle_jobs.py  # transforms Kaggle LinkedIn dataset to pipeline schema
+
+tests/
+  conftest.py                    # SQLite integration fixtures
+  test_api_integration.py        # end-to-end API tests
+  test_postgres_integration.py   # Postgres-specific integration tests
+  test_*.py                      # unit tests per module
 ```
+
+---
+
+## Data
+
+The dataset is sourced from the [LinkedIn Job Postings dataset on Kaggle](https://www.kaggle.com/datasets/arshkon/linkedin-job-postings). `scripts/prepare_kaggle_jobs.py` transforms it into the pipeline schema: title-based category classification (software engineering / data engineering / machine learning), seniority normalization, description cleaning, and deduplication by URL.
+
+The script uses title-only classification intentionally — description-based matching causes false positives (e.g., `"enrollment"` matching the `"llm"` pattern). Non-tech postings are excluded before any row limit is applied.
+
+To regenerate the dataset from a Kaggle download:
+
+```bash
+# With full Kaggle dataset (~124k rows → clean 500 tech jobs)
+python scripts/prepare_kaggle_jobs.py \
+  --external-dir data/external \
+  --max-rows 500
+
+# With the 800-row sample included in the repo
+python scripts/prepare_kaggle_jobs.py \
+  --external-dir data/external \
+  --max-rows 350
+```
+
+---
+
+## Recommendation scoring
+
+`/recommend/{job_id}` uses a hybrid scoring function rather than raw vector distance:
+
+```
+final_score = 0.70 × embedding_similarity
+            + 0.20 × skill_overlap (Jaccard)
+            + 0.07 × category_match
+            + 0.03 × seniority_match
+```
+
+Embedding similarity alone can surface structurally similar but domain-unrelated jobs. Skill overlap and category bonuses anchor results to domain-relevant matches. Each recommendation result includes `company`, `location`, `url`, `category`, and `seniority` so consumers can navigate to the original posting without a separate lookup.
 
 ---
 
@@ -101,47 +138,65 @@ data/
 
 ### `GET /jobs`
 
-List jobs with filters, pagination, and sorting.
+List jobs with keyword search, field filters, skill filter, pagination, and sorting.
 
 | Param | Description |
 |---|---|
-| `keyword` | match title or description |
-| `location` | filter by location |
+| `keyword` | match title, description, or cleaned description |
+| `location` | filter by location (partial match) |
 | `category` | filter by category |
 | `seniority` | filter by seniority |
-| `page` / `size` | pagination (max 100) |
-| `sort_by` | `date_posted`, `title`, `company`, etc. |
+| `skills` | comma-separated skill names, e.g. `python,sql,dbt` |
+| `page` / `size` | pagination (max 100 per page) |
+| `sort_by` | `date_posted`, `title`, `company`, `location`, `category`, `seniority` |
 | `sort_order` | `asc` / `desc` |
+
+### `GET /jobs/{job_id}`
+
+Single job detail by ID.
 
 ### `GET /analytics/skills`
 
-Top detected skills, filterable by `category`, `seniority`, `limit`.
+Top detected skills aggregated via PostgreSQL `unnest` on the `detected_skills` column, filterable by `category`, `seniority`, `limit` (max 50).
 
 ### `GET /recommend/{job_id}`
 
-Similar jobs using hybrid scoring (embedding similarity + skill overlap + category/seniority match). Scores are normalized and combined — not just vector distance.
+Similar jobs ranked by hybrid score. Response includes score breakdown, shared skills, and direct URL to the original posting.
+
+Optional filters:
+- `same_category_only` — restrict candidates to same category
+- `min_shared_skills` — minimum required shared detected skills (0–10)
+- `min_embedding_score` — cosine similarity floor for candidates (-1.0 to 1.0)
 
 ### `POST /rag/ask`
 
-Retrieval-augmented Q&A over job descriptions. Requires `ENABLE_RAG=true`.
+Retrieval-augmented Q&A over job descriptions. Enabled via `ENABLE_RAG=true`.
 
 ```json
 {
   "question": "Which backend jobs require FastAPI and PostgreSQL?",
-  "category": "Backend",
-  "location": "Berlin",
-  "seniority": "Senior",
+  "category": "software engineering",
+  "location": "New York",
+  "seniority": "senior",
   "top_k": 3
 }
 ```
 
+### `GET /health/ready`
+
+Full readiness check: database + artifact files + embedding cache in memory. Returns `503` when degraded.
+
 ### `GET /health/indexes`
 
-Check whether embedding and chunk index artifacts exist on disk.
+Artifact metadata: model name, job count, generation timestamp, staleness (stale after 24h).
 
 ### `GET /health/pipeline`
 
-Return pipeline run history — stage names, statuses, last run timestamps.
+Last 10 pipeline run records: stage name, status, row counts, duration, error detail.
+
+### `GET /health/db`
+
+Database connectivity check.
 
 ---
 
@@ -154,13 +209,13 @@ cp .env.docker.example .env.docker
 docker-compose up --build
 ```
 
-Then run the pipeline inside the container:
+Run the pipeline inside the container:
 
 ```bash
 docker exec jobscope-api python -m pipeline.rebuild_all --full-rebuild
 ```
 
-API will be available at `http://localhost:8000`. Interactive docs at `/docs`.
+API at `http://localhost:8000`, docs at `/docs`.
 
 **Without Docker:**
 
@@ -168,40 +223,75 @@ API will be available at `http://localhost:8000`. Interactive docs at `/docs`.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # set DATABASE_URL
+
+alembic upgrade head
 python -m pipeline.rebuild_all --full-rebuild
 uvicorn app.main:app --reload
 ```
 
 ---
 
-## Evaluation
-
-The pipeline includes offline evaluation scripts for both RAG and recommendation:
+## Pipeline modes
 
 ```bash
-# RAG quality (retrieval + answer relevance)
+# Full rebuild — re-ingests all records, resets all downstream state
+python -m pipeline.rebuild_all --full-rebuild
+
+# Incremental — processes only changed records (hash-based)
+python -m pipeline.rebuild_all
+```
+
+In incremental mode, each record's SHA-256 hash is compared to the stored value. Unchanged records — and their downstream artifacts — are skipped. Changed records have `processing_status`, `embedded_at`, and `chunked_at` reset, triggering selective reprocessing.
+
+---
+
+## Schema migrations
+
+Alembic manages the schema. Migration files are tracked in `alembic/versions/`.
+
+```bash
+# Apply all pending migrations (runs automatically on Docker startup)
+alembic upgrade head
+
+# Generate a migration after changing models.py
+alembic revision --autogenerate -m "description"
+
+# Check current revision
+alembic current
+```
+
+---
+
+## Evaluation
+
+```bash
+# RAG retrieval quality (keyword hit rate over eval cases)
 python -m pipeline.evaluate_rag
 
-# Recommendation quality (similarity distribution)
+# Recommendation quality (shared skill coverage)
 python -m pipeline.evaluate_recommendations
 ```
 
-Results are written to `data/processed/` as JSON. This exists not to claim production-level accuracy, but to make the retrieval and scoring behavior inspectable and comparable across changes.
+Results written to `data/processed/` as JSON. These are offline sanity checks, not production metrics.
 
 ---
 
 ## Deployment
 
-Deployed on Render with a managed PostgreSQL instance. The Dockerfile handles both `wait_for_db` (startup probe) and the API process. A production-specific compose file (`docker-compose.prod.yml`) handles environment separation.
+Deployed on Render with a managed PostgreSQL instance. On each container startup, `alembic upgrade head` applies any pending migrations before the API starts.
 
 Live: [https://jobscope-jrur.onrender.com/docs](https://jobscope-jrur.onrender.com/docs)
+
+`docker-compose.prod.yml` is provided for self-hosted production use.
 
 ---
 
 ## Limitations and what's next
 
-This project uses a static CSV as the data source. A more realistic version would pull from a live job board API or a scheduled scraper, which would make the incremental pipeline logic more meaningful in practice.
+The data source is a static CSV snapshot from Kaggle. A natural extension is connecting the pipeline to a live API — the Bundesagentur für Arbeit (German Federal Employment Agency) provides a free public REST API that would make the incremental pipeline logic meaningful with continuously updated data.
 
-The RAG component uses a simple chunking strategy and doesn't tune retrieval parameters per query type. Reranking is based on semantic similarity; a cross-encoder reranker would likely improve precision for longer questions.
+`detected_skills` is stored as a comma-separated text column. Migrating to a PostgreSQL array type or a normalized `job_skills` junction table would enable more efficient joins and filtering at the DB level.
 
-Potential next steps: swap FAISS for pgvector to simplify the deployment surface, add query logging to make evaluation continuous rather than batch, and expose the pipeline run health more prominently in the API response format.
+The RAG reranking combines FAISS cosine similarity with token overlap. A cross-encoder reranker would improve precision for longer or more specific questions.
+
+Rate limiting and authentication are not implemented. The architecture supports adding FastAPI middleware for both without structural changes.

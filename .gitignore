@@ -2,14 +2,8 @@
 __pycache__/
 *.pyc
 .env
+.env.production
 
 data/processed/*.npy
 data/processed/*.faiss
 data/processed/*.json
-
-!data/processed/job_embeddings.npy
-!data/processed/job_ids.json
-!data/processed/job_chunks.faiss
-!data/processed/job_chunks.json
-!data/processed/embedding_meta.json
-!data/processed/chunk_index_meta.json
