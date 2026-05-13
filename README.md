@@ -151,9 +151,11 @@ List jobs with keyword search, field filters, skill filter, pagination, and sort
 | `sort_by` | `date_posted`, `title`, `company`, `location`, `category`, `seniority` |
 | `sort_order` | `asc` / `desc` |
 
-### `GET /jobs/{job_id}`
+### `GET /jobs/{job_id}/recommendations`
 
-Single job detail by ID.
+Similar jobs ranked by hybrid score. Response includes score breakdown, shared skills, and direct URL to the original posting.
+
+Legacy alias: `GET /recommend/{job_id}`
 
 ### `GET /analytics/skills`
 
