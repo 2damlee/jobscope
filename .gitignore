@@ -1,9 +1,17 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
-.env
-.env.production
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
 
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local data/artifacts
+data/raw/
 data/processed/*.npy
 data/processed/*.faiss
-data/processed/*.json
