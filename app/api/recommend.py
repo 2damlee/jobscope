@@ -8,7 +8,11 @@ from app.services.recommend_service import list_recommendations
 router = APIRouter(prefix="/recommend", tags=["recommend"])
 
 
-@router.get("/{job_id}", response_model=list[RecommendedJobResponse])
+@router.get(
+    "/{job_id}",
+    response_model=list[RecommendedJobResponse],
+    deprecated=True,
+)
 def read_recommendations(
     request: Request,
     job_id: int,

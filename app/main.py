@@ -1,7 +1,8 @@
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from app.api.analytics import router as analytics_router
 from app.api.health import router as health_router
@@ -49,6 +50,24 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="JobScope API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(RequestLoggingMiddleware)
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    request_id = getattr(request.state, "request_id", None)
+
+    logger.exception(
+        "unhandled_exception path=%s method=%s request_id=%s",
+        request.url.path,
+        request.method,
+        request_id,
+    )
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "request_id": request_id,
+        },
+    )
 
 @app.get("/")
 def read_root():
