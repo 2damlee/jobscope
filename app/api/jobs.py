@@ -1,7 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.schemas import JobListResponse, JobResponse, RecommendedJobResponse
@@ -12,29 +12,21 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
 @router.get("", response_model=JobListResponse)
-def read_jobs(
+async def read_jobs(
     keyword: str | None = Query(default=None),
     location: str | None = Query(default=None),
     category: str | None = Query(default=None),
     seniority: str | None = Query(default=None),
-    skills: str | None = Query(
-        default=None,
-        description="Comma-separated skills. Example: python,sql,fastapi",
-    ),
+    skills: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     sort_by: Literal[
-        "date_posted",
-        "title",
-        "company",
-        "location",
-        "category",
-        "seniority",
-    ] = "date_posted",
-    sort_order: Literal["asc", "desc"] = "desc",
-    db: Session = Depends(get_db),
+        "date_posted", "title", "company", "location", "category", "seniority"
+    ] = Query(default="date_posted"),
+    sort_order: Literal["asc", "desc"] = Query(default="desc"),
+    db: AsyncSession = Depends(get_db),
 ):
-    return list_jobs(
+    return await list_jobs(
         db=db,
         keyword=keyword,
         location=location,
@@ -49,27 +41,27 @@ def read_jobs(
 
 
 @router.get("/{job_id}", response_model=JobResponse)
-def read_job_detail(
+async def read_job_detail(
     job_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
-    job = read_job(db=db, job_id=job_id)
+    job = await read_job(db=db, job_id=job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
 
 
 @router.get("/{job_id}/recommendations", response_model=list[RecommendedJobResponse])
-def read_job_recommendations(
+async def read_job_recommendations(
     request: Request,
     job_id: int,
     limit: int = Query(default=5, ge=1, le=20),
     same_category_only: bool = Query(default=False),
     min_shared_skills: int = Query(default=0, ge=0, le=10),
     min_embedding_score: float | None = Query(default=None, ge=-1.0, le=1.0),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
-    return list_recommendations(
+    return await list_recommendations(
         db=db,
         request=request,
         job_id=job_id,

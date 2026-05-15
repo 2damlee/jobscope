@@ -3,23 +3,16 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.artifacts import artifact_status
 from app.config import CHUNK_INDEX_META_PATH, EMBEDDING_META_PATH
-from app.db import SessionLocal, engine
+from app.crud import get_pipeline_runs
+from app.db import engine, get_db
 from app.models import PipelineRun
 
 router = APIRouter(prefix="/health", tags=["health"])
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def read_json_if_exists(path):
@@ -39,28 +32,24 @@ def compute_staleness(meta: dict | None):
             generated_at = generated_at.replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)
         age_hours = round((now - generated_at).total_seconds() / 3600, 2)
-        return {
-            "available": True,
-            "stale": age_hours > 24,
-            "age_hours": age_hours,
-        }
+        return {"available": True, "stale": age_hours > 24, "age_hours": age_hours}
     except Exception:
         return {"available": True, "stale": None, "age_hours": None}
 
 
-def check_db_ok() -> bool:
+async def check_db_ok() -> bool:
     try:
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
         return True
     except Exception:
         return False
 
 
 @router.get("/ready")
-def health_ready(request: Request):
+async def health_ready(request: Request):
     artifacts = artifact_status()
-    db_ok = check_db_ok()
+    db_ok = await check_db_ok()
 
     embeddings_in_memory = (
         getattr(request.app.state, "embeddings", None) is not None
@@ -93,14 +82,11 @@ def health_ready(request: Request):
     if recommend_ready:
         return payload
 
-    return JSONResponse(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        content=payload,
-    )
+    return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=payload)
 
 
 @router.get("/indexes")
-def health_indexes():
+async def health_indexes():
     embedding_meta = read_json_if_exists(EMBEDDING_META_PATH)
     chunk_meta = read_json_if_exists(CHUNK_INDEX_META_PATH)
 
@@ -117,13 +103,8 @@ def health_indexes():
 
 
 @router.get("/pipeline")
-def health_pipeline(db: Session = Depends(get_db)):
-    runs = (
-        db.query(PipelineRun)
-        .order_by(PipelineRun.started_at.desc())
-        .limit(10)
-        .all()
-    )
+async def health_pipeline(db: AsyncSession = Depends(get_db)):
+    runs = await get_pipeline_runs(db, limit=10)
 
     return {
         "runs": [
@@ -148,14 +129,11 @@ def health_pipeline(db: Session = Depends(get_db)):
 
 
 @router.get("/db")
-def health_db():
-    if check_db_ok():
+async def health_db():
+    if await check_db_ok():
         return {"status": "ok", "database": "reachable"}
 
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        content={
-            "status": "error",
-            "database": "unreachable",
-        },
+        content={"status": "error", "database": "unreachable"},
     )

@@ -2,7 +2,8 @@ import json
 
 import numpy as np
 from fastapi import HTTPException, Request
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import EMBEDDING_PATH, JOB_IDS_PATH
 from app.models import Job
@@ -10,6 +11,7 @@ from app.recommendation import compute_hybrid_score, parse_skills
 
 
 def load_embeddings_from_disk():
+    """Load embedding artifacts from disk. Called once at startup (sync ok here)."""
     if not EMBEDDING_PATH.exists() or not JOB_IDS_PATH.exists():
         raise FileNotFoundError(
             f"Embedding files not found: {EMBEDDING_PATH} and {JOB_IDS_PATH}"
@@ -60,8 +62,8 @@ def get_cached_embeddings(request: Request):
     return embeddings, job_ids
 
 
-def _build_ranked_recommendations(
-    db: Session,
+async def _build_ranked_recommendations(
+    db: AsyncSession,
     *,
     job_id: int,
     embeddings,
@@ -71,7 +73,8 @@ def _build_ranked_recommendations(
     min_shared_skills: int = 0,
     min_embedding_score: float | None = None,
 ):
-    target_job = db.query(Job).filter(Job.id == job_id).first()
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    target_job = result.scalar_one_or_none()
     if not target_job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -84,7 +87,8 @@ def _build_ranked_recommendations(
 
     embedding_scores = embeddings @ target_vec
 
-    candidate_jobs = db.query(Job).filter(Job.id.in_(job_ids)).all()
+    result = await db.execute(select(Job).where(Job.id.in_(job_ids)))
+    candidate_jobs = result.scalars().all()
     candidate_jobs_by_id = {job.id: job for job in candidate_jobs}
 
     ranked = []
@@ -167,8 +171,8 @@ def _build_ranked_recommendations(
     return ranked[:limit]
 
 
-def list_recommendations(
-    db: Session,
+async def list_recommendations(
+    db: AsyncSession,
     request: Request,
     job_id: int,
     limit: int = 5,
@@ -177,7 +181,7 @@ def list_recommendations(
     min_embedding_score: float | None = None,
 ):
     embeddings, job_ids = get_cached_embeddings(request)
-    return _build_ranked_recommendations(
+    return await _build_ranked_recommendations(
         db=db,
         job_id=job_id,
         embeddings=embeddings,
@@ -189,8 +193,8 @@ def list_recommendations(
     )
 
 
-def list_recommendations_for_offline_eval(
-    db: Session,
+async def list_recommendations_for_offline_eval(
+    db: AsyncSession,
     job_id: int,
     limit: int = 5,
     same_category_only: bool = False,
@@ -198,7 +202,7 @@ def list_recommendations_for_offline_eval(
     min_embedding_score: float | None = None,
 ):
     embeddings, job_ids = load_embeddings()
-    return _build_ranked_recommendations(
+    return await _build_ranked_recommendations(
         db=db,
         job_id=job_id,
         embeddings=embeddings,

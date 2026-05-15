@@ -52,3 +52,5 @@ uvicorn==0.42.0
 prefect>=3.6,<3.7
 pytest
 alembic==1.13.3
+asyncpg>=0.29,<1.0asyncpg>=0.29,<1.0
+aiosqlite>=0.19,<1.0

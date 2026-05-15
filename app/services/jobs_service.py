@@ -1,10 +1,10 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import get_job_by_id, get_jobs
 
 
-def list_jobs(
-    db: Session,
+async def list_jobs(
+    db: AsyncSession,
     keyword: str | None = None,
     location: str | None = None,
     category: str | None = None,
@@ -24,7 +24,7 @@ def list_jobs(
     normalized_seniority = seniority.strip().lower() if seniority else None
     normalized_skills = skills.strip() if skills else None
 
-    return get_jobs(
+    return await get_jobs(
         db=db,
         keyword=normalized_keyword,
         location=normalized_location,
@@ -38,5 +38,5 @@ def list_jobs(
     )
 
 
-def read_job(db: Session, job_id: int):
-    return get_job_by_id(db=db, job_id=job_id)
+async def read_job(db: AsyncSession, job_id: int):
+    return await get_job_by_id(db=db, job_id=job_id)

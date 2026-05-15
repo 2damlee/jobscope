@@ -1,15 +1,16 @@
-from sqlalchemy import asc, desc, or_, text
-from sqlalchemy.orm import Session
+from sqlalchemy import asc, desc, func, or_, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Job
-
-
-def get_job_by_id(db: Session, job_id: int) -> Job | None:
-    return db.query(Job).filter(Job.id == job_id).first()
+from app.models import Job, PipelineRun
 
 
-def get_jobs(
-    db: Session,
+async def get_job_by_id(db: AsyncSession, job_id: int) -> Job | None:
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    return result.scalar_one_or_none()
+
+
+async def get_jobs(
+    db: AsyncSession,
     keyword: str | None = None,
     location: str | None = None,
     category: str | None = None,
@@ -20,31 +21,30 @@ def get_jobs(
     sort_by: str = "date_posted",
     sort_order: str = "desc",
 ):
-    query = db.query(Job)
+    stmt = select(Job)
 
     if keyword:
-        keyword_term = f"%{keyword.strip()}%"
-        query = query.filter(
+        term = f"%{keyword.strip()}%"
+        stmt = stmt.where(
             or_(
-                Job.title.ilike(keyword_term),
-                Job.description.ilike(keyword_term),
-                Job.cleaned_description.ilike(keyword_term),
+                Job.title.ilike(term),
+                Job.description.ilike(term),
+                Job.cleaned_description.ilike(term),
             )
         )
 
     if location:
-        query = query.filter(Job.location.ilike(f"%{location.strip()}%"))
+        stmt = stmt.where(Job.location.ilike(f"%{location.strip()}%"))
 
     if category:
-        query = query.filter(Job.category.ilike(f"%{category.strip()}%"))
+        stmt = stmt.where(Job.category.ilike(f"%{category.strip()}%"))
 
     if seniority:
-        query = query.filter(Job.seniority.ilike(f"%{seniority.strip()}%"))
+        stmt = stmt.where(Job.seniority.ilike(f"%{seniority.strip()}%"))
 
     if skills:
-        skill_list = [skill.strip() for skill in skills.split(",") if skill.strip()]
-        for skill in skill_list:
-            query = query.filter(Job.detected_skills.ilike(f"%{skill}%"))
+        for skill in [s.strip() for s in skills.split(",") if s.strip()]:
+            stmt = stmt.where(Job.detected_skills.ilike(f"%{skill}%"))
 
     allowed_sort_fields = {
         "date_posted": Job.date_posted,
@@ -54,28 +54,21 @@ def get_jobs(
         "category": Job.category,
         "seniority": Job.seniority,
     }
+    sort_col = allowed_sort_fields.get(sort_by, Job.date_posted)
+    stmt = stmt.order_by(desc(sort_col) if sort_order.lower() == "desc" else asc(sort_col))
 
-    sort_column = allowed_sort_fields.get(sort_by, Job.date_posted)
-    sort_fn = desc if sort_order.lower() == "desc" else asc
+    # COUNT via subquery — works for both SQLite and PostgreSQL
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await db.execute(count_stmt)).scalar_one()
 
-    total = query.count()
-    items = (
-        query.order_by(sort_fn(sort_column))
-        .offset((page - 1) * size)
-        .limit(size)
-        .all()
-    )
+    paginated = stmt.offset((page - 1) * size).limit(size)
+    items = (await db.execute(paginated)).scalars().all()
 
-    return {
-        "items": items,
-        "page": page,
-        "size": size,
-        "total": total,
-    }
+    return {"items": items, "page": page, "size": size, "total": total}
 
 
-def get_top_skills(
-    db: Session,
+async def get_top_skills(
+    db: AsyncSession,
     category: str | None = None,
     seniority: str | None = None,
     limit: int = 10,
@@ -93,6 +86,8 @@ def get_top_skills(
 
     where_clause = " AND ".join(filters)
 
+    # PostgreSQL-specific: unnest + string_to_array for skill aggregation.
+    # This endpoint is intentionally PostgreSQL-only; SQLite does not support unnest.
     query = text(
         f"""
         SELECT skill, COUNT(*) AS count
@@ -108,6 +103,12 @@ def get_top_skills(
         """
     )
 
-    rows = db.execute(query, params).fetchall()
-
+    rows = (await db.execute(query, params)).fetchall()
     return [{"skill": row.skill, "count": row.count} for row in rows]
+
+
+async def get_pipeline_runs(db: AsyncSession, limit: int = 10) -> list[PipelineRun]:
+    result = await db.execute(
+        select(PipelineRun).order_by(PipelineRun.started_at.desc()).limit(limit)
+    )
+    return result.scalars().all()

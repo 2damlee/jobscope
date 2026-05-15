@@ -1,5 +1,6 @@
 import os
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from dotenv import load_dotenv
@@ -7,7 +8,8 @@ from sqlalchemy import engine_from_config, pool
 
 from app.models import Base
 
-load_dotenv()
+# Explicitly point to project root .env so it works regardless of cwd
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 config = context.config
 
@@ -22,7 +24,8 @@ def get_url() -> str:
     if not url:
         raise RuntimeError(
             "DATABASE_URL environment variable is not set. "
-            "Set it in .env or export it before running alembic."
+            "Set it in .env or export it before running alembic.\n"
+            f"  Expected location: {Path(__file__).resolve().parent.parent / '.env'}"
         )
     return url
 
