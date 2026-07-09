@@ -39,7 +39,14 @@ def test_evaluate_recommendations_summarizes_results(monkeypatch, tmp_path):
     def fake_session_local():
         return FakeSession(fake_jobs)
 
-    def fake_list_recommendations(db, job_id, limit=5):
+    def fake_list_recommendations_for_offline_eval(
+        db,
+        job_id,
+        limit=5,
+        same_category_only=False,
+        min_shared_skills=0,
+        min_embedding_score=None,
+    ):
         if job_id == 1:
             return [
                 {"shared_skills": ["Python", "SQL"]},
@@ -54,8 +61,8 @@ def test_evaluate_recommendations_summarizes_results(monkeypatch, tmp_path):
         fake_session_local,
     )
     monkeypatch.setattr(
-        "pipeline.evaluate_recommendations.list_recommendations",
-        fake_list_recommendations,
+        "pipeline.evaluate_recommendations.list_recommendations_for_offline_eval",
+        fake_list_recommendations_for_offline_eval,
     )
     monkeypatch.setattr(
         "pipeline.evaluate_recommendations.PROCESSED_DIR",
@@ -71,3 +78,23 @@ def test_evaluate_recommendations_summarizes_results(monkeypatch, tmp_path):
     assert summary["jobs_with_shared_skills"] == 2
     assert summary["avg_recommendations_per_job"] == 1.5
 
+def test_eval_uses_offline_function_with_matching_signature():
+    """Guard test: the eval script must call the offline variant, and the call
+    site must match its real signature. A mock with the wrong signature hid a
+    TypeError here once — this test binds the real function's signature to the
+    arguments the eval script uses, without touching the database.
+    """
+    import inspect
+
+    from app.services import recommend_service
+    from pipeline import evaluate_recommendations as eval_module
+
+    # The eval module must import the offline variant, not the request-bound one.
+    assert (
+        eval_module.list_recommendations_for_offline_eval
+        is recommend_service.list_recommendations_for_offline_eval
+    )
+
+    # Binding must succeed with the exact argument shape used in the eval loop.
+    sig = inspect.signature(recommend_service.list_recommendations_for_offline_eval)
+    sig.bind(object(), 1, limit=5)
