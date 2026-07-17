@@ -71,6 +71,8 @@ def build_embeddings():
             texts,
             convert_to_numpy=True,
             normalize_embeddings=True,
+            batch_size=64,
+            show_progress_bar=True,
         )
 
         np.save(EMBEDDING_PATH, embeddings)

@@ -1,0 +1,23 @@
+{
+  "label": "before: full dataset, naive recommend + ILIKE search",
+  "results": [
+    {
+      "endpoint": "GET /jobs?keyword=",
+      "requests": 200,
+      "errors": 0,
+      "p50_ms": 3084.1,
+      "p95_ms": 3532.1,
+      "p99_ms": 3707.9,
+      "mean_ms": 3111.4
+    },
+    {
+      "endpoint": "GET /jobs/{id}/recommendations",
+      "requests": 200,
+      "errors": 0,
+      "p50_ms": 11500.7,
+      "p95_ms": 18185.7,
+      "p99_ms": 21453.1,
+      "mean_ms": 11447.9
+    }
+  ]
+}
