@@ -1,0 +1,23 @@
+{
+  "label": "after: FAISS two-stage candidate retrieval",
+  "results": [
+    {
+      "endpoint": "GET /jobs?keyword=",
+      "requests": 200,
+      "errors": 0,
+      "p50_ms": 2985.0,
+      "p95_ms": 3243.1,
+      "p99_ms": 3342.5,
+      "mean_ms": 2976.7
+    },
+    {
+      "endpoint": "GET /jobs/{id}/recommendations",
+      "requests": 200,
+      "errors": 0,
+      "p50_ms": 67.1,
+      "p95_ms": 119.3,
+      "p99_ms": 154.7,
+      "mean_ms": 70.7
+    }
+  ]
+}
