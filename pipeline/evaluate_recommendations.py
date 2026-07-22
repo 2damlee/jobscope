@@ -4,7 +4,11 @@ from app.config import PROCESSED_DIR, ensure_data_dirs
 from app.db import SessionLocal
 from app.models import Job
 from app.recommendation import parse_skills
-from app.services.recommend_service import list_recommendations_for_offline_eval
+from app.candidates import CandidateIndex
+from app.services.recommend_service import (
+    list_recommendations_for_offline_eval,
+    load_embeddings,
+)
 from app.time_utils import utcnow_naive
 
 
@@ -13,6 +17,9 @@ def evaluate_recommendations(limit: int = 5, sample_size: int = 20) -> dict:
 
     try:
         jobs = db.query(Job).filter(Job.detected_skills.isnot(None)).all()[:sample_size]
+
+        embeddings, job_ids = load_embeddings()
+        candidate_index = CandidateIndex(embeddings, job_ids)
 
         evaluated_jobs = 0
         jobs_with_recommendations = 0
@@ -26,7 +33,7 @@ def evaluate_recommendations(limit: int = 5, sample_size: int = 20) -> dict:
                 continue
 
             recommendations = list_recommendations_for_offline_eval(
-                db, job.id, limit=limit
+                db, job.id, limit=limit, candidate_index=candidate_index
             )
 
             evaluated_jobs += 1

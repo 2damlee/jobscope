@@ -46,6 +46,7 @@ def test_evaluate_recommendations_summarizes_results(monkeypatch, tmp_path):
         same_category_only=False,
         min_shared_skills=0,
         min_embedding_score=None,
+        candidate_index=None,
     ):
         if job_id == 1:
             return [
@@ -56,6 +57,12 @@ def test_evaluate_recommendations_summarizes_results(monkeypatch, tmp_path):
             {"shared_skills": ["Python"]},
         ]
 
+    import numpy as np
+
+    monkeypatch.setattr(
+        "pipeline.evaluate_recommendations.load_embeddings",
+        lambda: (np.eye(2, dtype=np.float32), [1, 2]),
+    )
     monkeypatch.setattr(
         "pipeline.evaluate_recommendations.SessionLocal",
         fake_session_local,
@@ -98,3 +105,4 @@ def test_eval_uses_offline_function_with_matching_signature():
     # Binding must succeed with the exact argument shape used in the eval loop.
     sig = inspect.signature(recommend_service.list_recommendations_for_offline_eval)
     sig.bind(object(), 1, limit=5)
+    sig.bind(object(), 1, limit=5, candidate_index=object())

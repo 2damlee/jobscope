@@ -4,7 +4,8 @@ import numpy as np
 from fastapi import HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.config import EMBEDDING_PATH, JOB_IDS_PATH
+from app.candidates import CandidateIndex
+from app.config import EMBEDDING_PATH, JOB_IDS_PATH, RECOMMEND_CANDIDATE_POOL
 from app.models import Job
 from app.recommendation import compute_hybrid_score, parse_skills
 
@@ -60,40 +61,61 @@ def get_cached_embeddings(request: Request):
     return embeddings, job_ids
 
 
+def get_candidate_index(request: Request) -> CandidateIndex:
+    """Return the app-wide CandidateIndex, building it lazily if needed.
+
+    The index is cached on app.state and keyed to the identity of the
+    embeddings array: if the embeddings are ever swapped (e.g. artifact
+    reload), the index is rebuilt automatically on the next request.
+    """
+    embeddings, job_ids = get_cached_embeddings(request)
+
+    state = request.app.state
+    cached = getattr(state, "candidate_index", None)
+    source = getattr(state, "candidate_index_source", None)
+    if cached is not None and source is embeddings:
+        return cached
+
+    index = CandidateIndex(embeddings, job_ids)
+    state.candidate_index = index
+    state.candidate_index_source = embeddings
+    return index
+
+
 def _build_ranked_recommendations(
     db: Session,
     *,
     job_id: int,
-    embeddings,
-    job_ids,
+    candidate_index: CandidateIndex,
     limit: int = 5,
     same_category_only: bool = False,
     min_shared_skills: int = 0,
     min_embedding_score: float | None = None,
+    candidate_pool: int = RECOMMEND_CANDIDATE_POOL,
 ):
     target_job = db.query(Job).filter(Job.id == job_id).first()
     if not target_job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    if job_id not in job_ids:
+    if job_id not in candidate_index:
         raise HTTPException(status_code=404, detail="Embedding not found for this job")
 
-    target_idx = job_ids.index(job_id)
-    target_vec = embeddings[target_idx]
     target_skills = parse_skills(target_job.detected_skills)
 
-    embedding_scores = embeddings @ target_vec
+    # Stage 1: exact top-K candidate generation (FAISS), instead of scoring
+    # and loading every job in the corpus on each request.
+    candidates = candidate_index.top_k(job_id, candidate_pool)
+    candidate_ids = [candidate_id for candidate_id, _ in candidates]
+    score_by_id = {candidate_id: score for candidate_id, score in candidates}
 
-    candidate_jobs = db.query(Job).filter(Job.id.in_(job_ids)).all()
+    # Stage 2: load only the candidate rows and apply hybrid re-scoring.
+    candidate_jobs = db.query(Job).filter(Job.id.in_(candidate_ids)).all()
     candidate_jobs_by_id = {job.id: job for job in candidate_jobs}
 
     ranked = []
 
-    for idx, embedding_score in enumerate(embedding_scores):
-        candidate_id = job_ids[idx]
-
-        if candidate_id == job_id:
-            continue
+    for candidate_id in candidate_ids:
+        embedding_score = score_by_id[candidate_id]
 
         candidate_job = candidate_jobs_by_id.get(candidate_id)
         if not candidate_job or not candidate_job.title:
@@ -176,12 +198,11 @@ def list_recommendations(
     min_shared_skills: int = 0,
     min_embedding_score: float | None = None,
 ):
-    embeddings, job_ids = get_cached_embeddings(request)
+    candidate_index = get_candidate_index(request)
     return _build_ranked_recommendations(
         db=db,
         job_id=job_id,
-        embeddings=embeddings,
-        job_ids=job_ids,
+        candidate_index=candidate_index,
         limit=limit,
         same_category_only=same_category_only,
         min_shared_skills=min_shared_skills,
@@ -196,13 +217,16 @@ def list_recommendations_for_offline_eval(
     same_category_only: bool = False,
     min_shared_skills: int = 0,
     min_embedding_score: float | None = None,
+    candidate_index: CandidateIndex | None = None,
 ):
-    embeddings, job_ids = load_embeddings()
+    if candidate_index is None:
+        embeddings, job_ids = load_embeddings()
+        candidate_index = CandidateIndex(embeddings, job_ids)
+
     return _build_ranked_recommendations(
         db=db,
         job_id=job_id,
-        embeddings=embeddings,
-        job_ids=job_ids,
+        candidate_index=candidate_index,
         limit=limit,
         same_category_only=same_category_only,
         min_shared_skills=min_shared_skills,

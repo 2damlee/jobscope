@@ -43,3 +43,20 @@ Label: `before: full dataset, naive recommend + ILIKE search`
 - `/recommendations`: per request, the service computes similarity against
   the **entire** embedding matrix and loads **all** candidate jobs from the
   database before ranking — O(N) DB fetch + O(N) scoring on every
+
+### After optimization
+
+**Two-stage retrieval** (`after: FAISS two-stage candidate retrieval`,
+raw data: `docs/benchmark_after_day4.json`)
+
+| Endpoint | Stage | p50 (ms) | p95 (ms) | p99 (ms) |
+|---|---|---|---|---|
+| `GET /jobs/{id}/recommendations` | before (full scan) | 11,501 | 18,186 | 21,453 |
+| `GET /jobs/{id}/recommendations` | **after (FAISS 2-stage)** | **67** | **119** | **155** |
+| `GET /jobs?keyword=` | before (ILIKE) | 3,084 | 3,532 | 3,708 |
+| `GET /jobs?keyword=` | after (FTS + GIN) | – (Day 5) | – | – |
+
+**~172× p50 improvement.** Candidate generation is exact (IndexFlatIP), so
+the top-K set is mathematically identical to the previous full scan; offline
+evaluation confirmed no quality regression (14/14 sampled jobs produce
+recommendations, all with shared skills, avg 5.0 per job).

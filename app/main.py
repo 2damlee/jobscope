@@ -11,6 +11,7 @@ from app.api.recommend import router as recommend_router
 from app.artifacts import artifact_status
 from app.logging import setup_logger
 from app.middleware import RequestLoggingMiddleware
+from app.candidates import CandidateIndex
 from app.services.recommend_service import load_embeddings_from_disk
 
 logger = setup_logger()
@@ -28,12 +29,18 @@ async def lifespan(app: FastAPI):
 
     app.state.embeddings = None
     app.state.job_ids = None
+    app.state.candidate_index = None
+    app.state.candidate_index_source = None
 
     try:
         embeddings, job_ids = load_embeddings_from_disk()
         app.state.embeddings = embeddings
         app.state.job_ids = job_ids
-        logger.info(f"recommendation cache loaded: {len(job_ids)} jobs")
+        app.state.candidate_index = CandidateIndex(embeddings, job_ids)
+        app.state.candidate_index_source = embeddings
+        logger.info(
+            f"recommendation cache loaded: {len(job_ids)} jobs, candidate index built"
+        )
     except Exception as exc:
         logger.warning(f"recommendation cache unavailable at startup: {exc}")
 
